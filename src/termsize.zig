@@ -13,7 +13,7 @@ pub fn init() !TermSize {
         },
 
         .macos, .linux, .freebsd => {
-            return undefined;
+            return unix_term.init();
         },
         else => {
             return undefined;
