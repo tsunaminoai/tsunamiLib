@@ -1,5 +1,6 @@
 const std = @import("std");
 const assert = std.debug.assert;
+const Array = std.ArrayList;
 
 const NodeType = enum {
     Document,
@@ -76,9 +77,6 @@ pub const Node = struct {
     }
 };
 
-// const Document = struct {
-//     children: []Node(.Section),
-// };
 // const Section = struct {
 //     heading: Heading,
 //     children: []Node(.Heading),
@@ -110,7 +108,7 @@ pub const Node = struct {
 // };
 
 pub const Document = struct {
-    children: ?[]Node = null,
+    children: Array(Node),
     type: NodeType = .Document,
     pub fn toNode(self: *Document) Node {
         return Node.init(self);
@@ -123,7 +121,9 @@ pub const Document = struct {
         arena = std.heap.ArenaAllocator.init(allocator);
         alloc = arena.allocator();
         const self = try alloc.create(Document);
-        self.* = Document{};
+        self.* = Document{
+            .children = Array(Node).init(alloc),
+        };
         return self;
     }
     pub fn deinit(self: *Document) void {
