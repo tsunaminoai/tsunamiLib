@@ -19,7 +19,7 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/termsize.zig"),
     });
     _ = b.addModule("termsize", .{
-        .root_source_file = b.path("src/markdown.zig"),
+        .root_source_file = b.path("src/markdown/markdown.zig"),
     });
 
     const lib = b.addStaticLibrary(.{
@@ -81,7 +81,7 @@ pub fn build(b: *std.Build) void {
         //todo: .test_runner = "zig test", or something
     });
     const markdown_unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/markdown.zig"),
+        .root_source_file = b.path("src/markdown/markdown.zig"),
         .target = target,
         .optimize = optimize,
         .test_runner = null,
