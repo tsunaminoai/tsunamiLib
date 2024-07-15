@@ -18,6 +18,9 @@ pub fn build(b: *std.Build) void {
     _ = b.addModule("termsize", .{
         .root_source_file = b.path("src/termsize.zig"),
     });
+    _ = b.addModule("termsize", .{
+        .root_source_file = b.path("src/markdown.zig"),
+    });
 
     const lib = b.addStaticLibrary(.{
         .name = "tsunamiLib",
@@ -77,6 +80,13 @@ pub fn build(b: *std.Build) void {
         .test_runner = null,
         //todo: .test_runner = "zig test", or something
     });
+    const markdown_unit_tests = b.addTest(.{
+        .root_source_file = b.path("src/markdown.zig"),
+        .target = target,
+        .optimize = optimize,
+        .test_runner = null,
+    });
+    const run_markdown_unit_tests = b.addRunArtifact(markdown_unit_tests);
 
     const run_termsize_unit_tests = b.addRunArtifact(termsize_unit_tests);
     _ = run_termsize_unit_tests; // autofix
@@ -93,6 +103,6 @@ pub fn build(b: *std.Build) void {
     // the `zig build --help` menu, providing a way for the user to request
     // running the unit tests.
     const test_step = b.step("test", "Run unit tests");
-    // test_step.dependOn(&run_termsize_unit_tests.step);
+    test_step.dependOn(&run_markdown_unit_tests.step);
     test_step.dependOn(&run_exe_unit_tests.step);
 }
