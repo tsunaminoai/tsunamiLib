@@ -1,138 +1,95 @@
 const std = @import("std");
-const AST = @import("ast.zig");
-
-const TokenType = enum {
-    Heading,
-    Text,
-    Bold,
-    Italic,
-    Code,
-    ListItem,
-    Paragraph,
-    Link,
-    Image,
-    BlockQuote,
-    HorizontalRule,
-};
-
-const Token = struct {
-    type: TokenType,
-    loc: usize,
-    ptr: [*]const u8,
-    len: usize = 0,
-};
-
-const Needles = std.ComptimeStringMap(TokenType, .{
-    .{ "#", .Heading },
-    .{ "**", .Bold },
-    .{ "_", .Italic },
-    .{ "`", .Code },
-    .{ "- ", .ListItem },
-    .{ "> ", .BlockQuote },
-    .{ "---", .HorizontalRule },
-});
-
-pub fn tokenize(alloc: std.mem.Allocator, input: []const u8) ![]Token {
-    var tokens = std.ArrayList(Token).init(alloc);
-    defer tokens.deinit();
-    const startsWith = std.mem.startsWith;
-    var idx: usize = 0;
-    while (idx < input.len) : (idx += 1) {
-        inline for (Needles.kvs) |kv| {
-            const needle = kv.key;
-            const tokenType = kv.value;
-            if (startsWith(u8, input[idx..], needle)) {
-                const token = Token{ .type = tokenType, .loc = idx, .ptr = input[idx + 1 ..].ptr };
-                try tokens.append(token);
-                idx += needle.len;
-                break;
-            }
+const Allocator = std.mem.Allocator;
+const Array = std.ArrayList;
+/// Heres what I'd like to see:
+/// MD -> Lines -> AST
+/// Needs to have formatting for each line type
+/// Assuming no multiline elements for now
+fn eatWhitespace(txt: []const u8, idx: usize) usize {
+    for (txt[idx..], 0..) |c, i| {
+        if (!std.ascii.isWhitespace(c)) {
+            return i + idx;
         }
     }
-
-    return tokens.toOwnedSlice();
 }
 
-pub fn parseToAST(alloc: std.mem.Allocator, tokens: []Token) !AST.Node {
-    _ = tokens; // autofix
-    var doc = try AST.Document.init(alloc);
-    return doc.toNode();
-}
+const LineType = enum(u8) {
+    heading = '#',
+    block_quote = '>',
+    list_u = '-',
+    text,
+    blank,
 
-fn parseToANSI(alloc: std.mem.Allocator, tokens: []Token) ![]u8 {
-    var output = std.ArrayList(u8).init(alloc);
-    defer output.deinit();
+    fn toType(c: u8) LineType {
+        return std.meta.intToEnum(LineType, c) catch return .text;
+    }
+};
 
-    for (tokens) |tok| {
-        switch (tok.type) {
-            TokenType.Heading => {
-                try output.appendSlice("\x1b[1m");
-            },
-            TokenType.Text => {
-                try output.appendSlice(tok.ptr[0..tok.len]);
-            },
-            TokenType.Bold => {
-                try output.appendSlice("\x1b[1m");
-            },
-            TokenType.Italic => {
-                try output.appendSlice("\x1b[3m");
-            },
-            TokenType.Code => {
-                try output.appendSlice("\x1b[2m");
-            },
-            TokenType.ListItem => {
-                try output.appendSlice("  • ");
-            },
-            TokenType.Paragraph => {
-                try output.appendSlice("\n\n");
-            },
-            TokenType.Link => {
-                try output.appendSlice("\x1b[4m");
-            },
-            TokenType.Image => {
-                try output.appendSlice("\x1b[5m");
-            },
-            TokenType.BlockQuote => {
-                try output.appendSlice("  > ");
-            },
-            TokenType.HorizontalRule => {
-                try output.appendSlice("\n\n");
-            },
+pub const MDDoc = struct {
+    lines: []Line,
+    const Line = struct {
+        txt: []const u8,
+        type: LineType,
+        pub fn parse(src: []const u8) !Line {
+            return .{
+                .txt = src,
+                .type = if (src.len > 0) LineType.toType(src[0]) else .blank,
+            };
+        }
+    };
+    fn parse(allocator: std.mem.Allocator, md: []const u8) !MDDoc {
+        var idx: usize = 0;
+        var lines = Array(MDDoc.Line).init(allocator);
+        var split = std.mem.splitAny(u8, md, "\n");
+        while (split.next()) |l| {
+            const line = try Line.parse(l);
+            try lines.append(line);
+            idx += line.txt.len;
+        }
+        return MDDoc{
+            .lines = try lines.toOwnedSlice(),
+        };
+    }
+    pub fn format(
+        self: MDDoc,
+        _: []const u8,
+        _: anytype,
+        writer: anytype,
+    ) !void {
+        for (self.lines) |l| {
+            try writer.print("{} {s}\n", .{ l.type, l.txt });
         }
     }
+};
 
-    return output.toOwnedSlice();
-}
-
-const testText =
-    \\# Title
+const testDoc =
+    \\# H1
     \\
-    \\## Subtitle
+    \\Paragaph
+    \\More text in the same paragraph
     \\
-    \\This is a paragraph with some text. It has a [link](https://example.com) and an image: ![alt text](https://example.com/image.png)
+    \\New Paragraph
     \\
-    \\- This is a list item
-    \\- This is another list item
-    \\
-    \\---
-    \\> This is a block quote
-    \\
-    \\**bold text**
-    \\_italic text_
-    \\`code text`
-    \\```code block
-    \\some code
-    \\```
-    \\
+    \\> Quote
 ;
 
-test "tokenize" {
-    const allocator = std.testing.allocator;
-    const tokens = try tokenize(allocator, testText);
-    defer allocator.free(tokens);
-    // std.debug.print("Tokens: {any}\n", .{tokens});
+const expecteds = .{
+    LineType.heading,
+    LineType.blank,
+    LineType.text,
+    LineType.text,
+    LineType.blank,
+    LineType.text,
+    LineType.blank,
+    LineType.block_quote,
+};
+const testing = std.testing;
+const expectEql = std.testing.expectEqualDeep;
+test "MDDoc" {
+    const md = try MDDoc.parse(testing.allocator, testDoc[0..]);
+    defer testing.allocator.free(md.lines);
 
-    var doc = try parseToAST(allocator, tokens);
-    defer doc.deinit();
-    std.debug.print("Doc: {any}\n", .{doc});
+    inline for (expecteds, 0..) |exp, i| {
+        try expectEql(md.lines[i].type, exp);
+    }
 }
