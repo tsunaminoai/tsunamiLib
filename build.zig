@@ -78,6 +78,15 @@ pub fn build(b: *std.Build) void {
         //todo: .test_runner = "zig test", or something
     });
 
+    const unit_tests = b.addTest(.{
+        .root_source_file = b.path("src/root.zig"),
+        .target = target,
+        .optimize = optimize,
+        .test_runner = null,
+        //todo: .test_runner = "zig test", or something
+    });
+    const run_unit_tests = b.addRunArtifact(unit_tests);
+
     const run_termsize_unit_tests = b.addRunArtifact(termsize_unit_tests);
     _ = run_termsize_unit_tests; // autofix
 
@@ -95,4 +104,5 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run unit tests");
     // test_step.dependOn(&run_termsize_unit_tests.step);
     test_step.dependOn(&run_exe_unit_tests.step);
+    test_step.dependOn(&run_unit_tests.step);
 }
