@@ -18,6 +18,10 @@ pub fn build(b: *std.Build) void {
     _ = b.addModule("termsize", .{
         .root_source_file = b.path("src/termsize.zig"),
     });
+    const koino_dep = b.dependency("koino", .{
+        .target = target,
+        .optimize = optimize,
+    });
 
     const lib = b.addStaticLibrary(.{
         .name = "tsunamiLib",
@@ -27,6 +31,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    lib.root_module.addImport("koino", koino_dep.module("koino"));
 
     // This declares intent for the library to be installed into the standard
     // location when the user invokes the "install" step (the default step when
@@ -89,10 +94,16 @@ pub fn build(b: *std.Build) void {
 
     const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
 
+    const lib_unit_tests = b.addTest(.{
+        .root_module = lib.root_module,
+    });
+    const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
+
     // Similar to creating the run step earlier, this exposes a `test` step to
     // the `zig build --help` menu, providing a way for the user to request
     // running the unit tests.
     const test_step = b.step("test", "Run unit tests");
     // test_step.dependOn(&run_termsize_unit_tests.step);
     test_step.dependOn(&run_exe_unit_tests.step);
+    test_step.dependOn(&run_lib_unit_tests.step);
 }

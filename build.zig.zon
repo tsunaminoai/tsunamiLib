@@ -1,5 +1,6 @@
 .{
-    .name = "tsunamiLib",
+    .name = .tsunamiLib,
+    .fingerprint = 0x6018697c24b0a722,
     // This is a [Semantic Version](https://semver.org/).
     // In a future version of Zig it will be used for package deduplication.
     .version = "0.0.0",
@@ -14,7 +15,12 @@
     // `zig build --fetch` can be used to fetch all dependencies of a package, recursively.
     // Once all dependencies are fetched, `zig build` no longer requires
     // Internet connectivity.
-    .dependencies = .{},
+    .dependencies = .{
+        .koino = .{
+            .url = "https://github.com/kivikakk/koino/archive/refs/heads/main.zip",
+            .hash = "koino-0.1.0-S9LuWmSKAgAcN0juy5hqSQNRPP4WtKiWTi3xG_1pepAZ",
+        },
+    },
     .paths = .{
         // This makes *all* files, recursively, included in this package. It is generally
         // better to explicitly list the files and directories instead, to insure that
