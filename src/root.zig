@@ -4,23 +4,40 @@ const Allocator = std.mem.Allocator;
 const tst = std.testing;
 const math = std.math;
 
-const koino = @import("koino");
+const Zyrtex = @import("zyrtex/ast.zig");
+
+pub const koino = @import("koino");
 
 test {
     std.testing.refAllDecls(@This());
 
-    var k = try koino.parser.Parser.init(tst.allocator, .{
-        .extensions = .{},
+    var k = try koino.parser.Parser.init(tst.allocator, koino.Options{
+        .extensions = .{
+            .autolink = true,
+            .strikethrough = true,
+            .table = true,
+            .tagfilter = true,
+        },
     });
     defer k.deinit();
 
-    try k.feed("**Hello**, [world](http://world.gov)!");
+    try k.feed(
+        \\## heading 1
+        \\## heading 2
+        \\```mermaid
+        \\graph TD
+        \\A-->B
+        \\```
+    );
 
     const doc = try k.finish();
     var iter = doc.traverseIterator();
     while (iter.next()) |node| {
         switch (node) {
-            else => {
+            .Start => {
+                std.debug.print("Node: {}\n", .{node.Start.data.value});
+            },
+            .End => {
                 // std.debug.print("Node: {}\n", .{n});
             },
         }
