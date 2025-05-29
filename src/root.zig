@@ -3,12 +3,14 @@ const Array = std.ArrayList;
 const Allocator = std.mem.Allocator;
 const tst = std.testing;
 const math = std.math;
+pub const Astro = @import("astro.zig");
 
 const koino = @import("koino");
 
 test {
     std.testing.refAllDecls(@This());
-
+}
+test {
     var k = try koino.parser.Parser.init(tst.allocator, .{
         .extensions = .{},
     });
@@ -35,5 +37,5 @@ test {
     defer tst.allocator.free(output);
     defer doc.deinit();
 
-    std.debug.print("{s}\n", .{output});
+    // std.debug.print("{s}\n", .{output});
 }
