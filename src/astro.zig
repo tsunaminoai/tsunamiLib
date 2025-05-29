@@ -178,6 +178,246 @@ pub fn dcs2c(comptime T: type, sphere: Spherical(T)) Cartesian(T) {
     };
 }
 
+///   Form a rotation matrix from the Euler angles - three successive
+///   rotations about specified Cartesian axes (double precision)
+///   Given:
+///     ORDER   c*(*)   specifies about which axes the rotations occur
+///     PHI     d       1st rotation (radians)
+///     THETA   d       2nd rotation (   "   )
+///     PSI     d       3rd rotation (   "   )
+///   Returned:
+///     RMAT    d(3,3)  rotation matrix
+///   A rotation is positive when the reference frame rotates
+///   anticlockwise as seen looking towards the origin from the
+///   positive region of the specified axis.
+///   The characters of ORDER define which axes the three successive
+///   rotations are about.  A typical value is 'ZXZ', indicating that
+///   RMAT is to become the direction cosine matrix corresponding to
+///   rotations of the reference frame through PHI radians about the
+///   old Z-axis, followed by THETA radians about the resulting X-axis,
+///   then PSI radians about the resulting Z-axis.
+///   The axis names can be any of the following, in any order or
+///   combination:  X, Y, Z, uppercase or lowercase, 1, 2, 3.  Normal
+///   axis labelling/numbering conventions apply;  the xyz (=123)
+///   triad is right-handed.  Thus, the 'ZXZ' example given above
+///   could be written 'zxz' or '313' (or even 'ZxZ' or '3xZ').  ORDER
+///   is terminated by length or by the first unrecognized character.
+///   Fewer than three rotations are acceptable, in which case the later
+///   angle arguments are ignored.  If all rotations are zero, the
+///   identity matrix is produced.
+pub fn deuler(comptime T: type, order: [3]u8, phi: T, theta: T, psi: T) ![3][3]T {
+    var res: [3][3]T = @splat(@splat(1));
+    for (order, 0..) |axis, i| {
+        var rot: [3][3]T = @splat(@splat(1));
+        const angle = switch (i) {
+            1 => phi,
+            2 => theta,
+            else => psi,
+        };
+        const ang_sin = @sin(angle);
+        const ang_cos = @cos(angle);
+        switch (axis) {
+            'X', 'x', '1' => {
+                rot[1][1] = ang_cos;
+                rot[1][2] = ang_sin;
+                rot[2][1] = -ang_sin;
+                rot[2][2] = ang_cos;
+            },
+            'Y', 'y', '2' => {
+                rot[0][0] = ang_cos;
+                rot[0][2] = -ang_sin;
+                rot[2][0] = ang_sin;
+                rot[2][2] = ang_cos;
+            },
+            'Z', 'z', '3' => {
+                rot[0][0] = ang_cos;
+                rot[0][1] = ang_sin;
+                rot[1][0] = -ang_sin;
+                rot[1][1] = ang_cos;
+            },
+            else => return error.InvalidOrigin,
+        }
+        res = matmul(T, res, rot);
+    }
+    return res;
+}
+
+fn matmul(comptime T: type, a: [3][3]T, b: [3][3]T) [3][3]T {
+    var result: [3][3]f32 = undefined;
+
+    for (0..3) |i| {
+        for (0..3) |j| {
+            var sum: f32 = 0;
+            for (0..3) |k| {
+                sum += a[i][k] * b[k][j];
+            }
+            result[i][j] = sum;
+        }
+    }
+
+    return result;
+}
+/// Conversion of Besselian Epoch to Modified Julian Date
+/// (double precision)
+/// Given:
+/// epb      dp       Besselian Epoch
+/// The result is the Modified Julian Date (JD - 2400000.5).
+/// -
+pub fn epb2d(epb: anytype) @TypeOf(epb) {
+    return 15019.81352e0 + (epb - 1900e0) * 365.242198781e0;
+}
+
+pub fn Gregorian(comptime T: type) type {
+    return struct {
+        year: T = 0,
+        month: T = 0,
+        day: T = 0,
+        day_fraction: T = 0,
+    };
+}
+/// Modified Julian Date to Gregorian year, month, day,
+/// and fraction of a day.
+/// Given:
+/// DJM      dp     modified Julian Date (JD-2400000.5)
+/// Returned:
+/// IY       int    year
+/// IM       int    month
+/// ID       int    day
+/// FD       dp     fraction of day
+/// J        int    status:
+/// 0 = OK
+/// -1 = unacceptable date (before 4701BC March 1)
+/// The algorithm is adapted from Hatcher 1984 (QJRAS 25, 53-55).
+/// Last revision:   22 July 2004
+pub fn djcl(mjd: anytype) !Gregorian(@TypeOf(mjd)) {
+    const T = @TypeOf(mjd);
+    var ret: Gregorian(T) = .{};
+    if (mjd <= -2395520e0 or mjd >= 1e9) return error.JulianDateOutOfRange;
+
+    ret.day_fraction = @mod(mjd, 1e0);
+    if (ret.day_fraction < 0e0)
+        ret.day_fraction += 1e0;
+    const day_int = math.floor(mjd - ret.day_fraction);
+    const jd = day_int + 2400001.0;
+
+    const n4 = 4 * (jd + @divFloor((6 * @divFloor((@divFloor(4 * jd - 17918, 146097)), 4)) + 1, 2) - 37);
+    const nd10 = 10 * (@divFloor(@mod(n4 - 237, 1461), 4)) + 5;
+    ret.year = @divFloor(n4, 1461) - 4712;
+    ret.month = @mod(@divFloor(nd10, 306) + 2, 12) + 1;
+    ret.day = @divFloor(@mod(nd10, 306), 10) + 1;
+    return ret;
+}
+
+pub fn djcal(ndp: anytype, djm: anytype) !Gregorian(@TypeOf(djm)) {
+    const T = @TypeOf(djm);
+    if ((djm <= -2395520e0) or (djm <= -1e9)) return error.JulianDateOutOfRange;
+
+    // Denominator
+    const nfd = math.pow(T, 10, @max(@as(T, ndp), 0));
+    const fd = nfd;
+
+    // round date
+    const df = djm * fd;
+
+    // separate day and fraction
+    var f = @mod(df, fd);
+    if (f < 0e0)
+        f = f + fd;
+    const d = (df - f) / fd;
+
+    // gregorian
+    const jd = d + 2400001;
+    const n4 = 4 * (jd + @divFloor((6 * @divFloor((@divFloor(4 * jd - 17918, 146097)), 4)) + 1, 2) - 37);
+    const nd10 = 10 * (@divFloor(@mod(n4 - 237, 1461), 4)) + 5;
+
+    return .{
+        .year = @divFloor(n4, 1461) - 4712,
+        .month = @mod(@divFloor(nd10, 306) + 2, 12) + 1,
+        .day = @divFloor(@mod(nd10, 306), 10) + 1,
+        .day_fraction = f,
+    };
+}
+/// Horizon to equatorial coordinates:  Az,El to HA,Dec
+///
+/// (double precision)
+///
+/// Given:
+/// AZ      d     azimuth
+/// EL      d     elevation
+/// PHI     d     observatory latitude
+///
+/// Returned:
+/// HA      d     hour angle
+/// DEC     d     declination
+///
+/// Notes:
+///
+/// 1)  All the arguments are angles in radians.
+///
+/// 2)  The sign convention for azimuth is north zero, east +pi/2.
+///
+/// 3)  HA is returned in the range +/-pi.  Declination is returned
+/// in the range +/-pi/2.
+///
+/// 4)  The latitude is (in principle) geodetic.  In critical
+/// applications, corrections for polar motion should be applied.
+///
+/// 5)  In some applications it will be important to specify the
+/// correct type of elevation in order to produce the required
+/// type of HA,Dec.  In particular, it may be important to
+/// distinguish between the elevation as affected by refraction,
+/// which will yield the "observed" HA,Dec, and the elevation
+/// in vacuo, which will yield the "topocentric" HA,Dec.  If the
+/// effects of diurnal aberration can be neglected, the
+/// topocentric HA,Dec may be used as an approximation to the
+/// "apparent" HA,Dec.
+///
+/// 6)  No range checking of arguments is done.
+///
+/// 7)  In applications which involve many such calculations, rather
+/// than calling the present routine it will be more efficient to
+/// use inline code, having previously computed fixed terms such
+/// as sine and cosine of latitude.
+/// -
+pub fn de2h(comptime T: type, horizon: Horizon(T)) !Equitorial(T) {
+    const sa = @sin(horizon.azimuth);
+    const ca = @cos(horizon.azimuth);
+    const se = @sin(horizon.elevation);
+    const ce = @cos(horizon.elevation);
+    const sp = @sin(horizon.obvs_latitude);
+    const cp = @cos(horizon.obvs_latitude);
+
+    // HA,Dec as x,y,z
+    const x = -ca * ce * sp + se * cp;
+    const y = -sa * ce;
+    const z = ca * ce * cp + se * sp;
+
+    // To HA,Dec
+    const r = @sqrt(x * x + y * y);
+    return .{
+        .hour_angle = math.atan2(y, x),
+        .declanation = math.atan2(z, r),
+    };
+    // ha = np.where(r == 0, 0, np.arctan2(y, x))
+    // dec = np.arctan2(z, r)
+    // return ha, dec
+}
+pub fn Equitorial(comptime T: type) type {
+    return struct {
+        hour_angle: T,
+        declenation: T,
+    };
+}
+pub fn Horizon(comptime T: type) type {
+    return struct {
+        azimuth: T,
+        elevation: T,
+        obvs_latitude: T,
+    };
+}
 test {
-    // std.debug.print("{}\n", .{try clyd(2025, 1, 1)});
+    std.debug.print("{}\n", .{try clyd(2025, 1, 1)});
+    std.debug.print("{}\n", .{try djcl(2460818.372431)});
+    std.debug.print("{}\n", .{try djcal(2, @as(f32, 2460818.372431))});
+    std.debug.print("{any}\n", .{try deuler(f32, "ZXZ".*, 2, 2, 2)});
 }
