@@ -130,6 +130,13 @@ pub fn Spherical(comptime T: type) type {
     return struct {
         latitude: T,
         longitude: T,
+        pub fn direction_cosines(self: @This()) Cartesian(T) {
+            return .{
+                .x = @cos(self.right_acention) * @cos(self.declanation),
+                .y = @sin(self.right_acention) * @cos(self.declanation),
+                .z = @sin(self.declanation),
+            };
+        }
     };
 }
 
@@ -169,13 +176,7 @@ pub fn dcc2s(comptime T: type, coord: Cartesian(T)) Spherical(T) {
 ///
 ///   Last revision:   26 December 2004
 pub fn dcs2c(comptime T: type, sphere: Spherical(T)) Cartesian(T) {
-    const right_acention = sphere.longitude;
-    const declanation = sphere.latitude;
-    return .{
-        .x = @cos(right_acention) * @cos(declanation),
-        .y = @sin(right_acention) * @cos(declanation),
-        .z = @sin(declanation),
-    };
+    return sphere.direction_cosines();
 }
 
 ///   Form a rotation matrix from the Euler angles - three successive
@@ -379,28 +380,8 @@ pub fn djcal(ndp: anytype, djm: anytype) !Gregorian(@TypeOf(djm)) {
 /// use inline code, having previously computed fixed terms such
 /// as sine and cosine of latitude.
 /// -
-pub fn de2h(comptime T: type, horizon: Horizon(T)) !Equitorial(T) {
-    const sa = @sin(horizon.azimuth);
-    const ca = @cos(horizon.azimuth);
-    const se = @sin(horizon.elevation);
-    const ce = @cos(horizon.elevation);
-    const sp = @sin(horizon.obvs_latitude);
-    const cp = @cos(horizon.obvs_latitude);
-
-    // HA,Dec as x,y,z
-    const x = -ca * ce * sp + se * cp;
-    const y = -sa * ce;
-    const z = ca * ce * cp + se * sp;
-
-    // To HA,Dec
-    const r = @sqrt(x * x + y * y);
-    return .{
-        .hour_angle = math.atan2(y, x),
-        .declanation = math.atan2(z, r),
-    };
-    // ha = np.where(r == 0, 0, np.arctan2(y, x))
-    // dec = np.arctan2(z, r)
-    // return ha, dec
+pub fn dh2e(comptime T: type, horizon: Horizon(T)) !Equitorial(T) {
+    return horizon.toEquitorial();
 }
 pub fn Equitorial(comptime T: type) type {
     return struct {
@@ -413,7 +394,439 @@ pub fn Horizon(comptime T: type) type {
         azimuth: T,
         elevation: T,
         obvs_latitude: T,
+        pub fn toEquitorial(self: @This()) Equitorial(T) {
+            const sa = @sin(self.azimuth);
+            const ca = @cos(self.azimuth);
+            const se = @sin(self.elevation);
+            const ce = @cos(self.elevation);
+            const sl = @sin(self.obsv_latitude);
+            const cl = @cos(self.obvs_latitude);
+
+            const x = -ca * ce * sl + se * cl;
+            const y = -sa * ce;
+            const z = ca * ce * cl + se * sl;
+
+            const r = @sqrt(x * x + y * y);
+            return .{
+                .hour_angle = math.atan2(y, x),
+                .declenation = math.atan2(z, r),
+            };
+        }
+        const SineCosine = struct { sa: T, ca: T, se: T, ce: T, sp: T, cp: T };
+        pub fn sine_cosine(self: @This()) SineCosine {
+            return .{
+                .sa = @sin(self.azimuth),
+                .ca = @cos(self.azimuth),
+                .se = @sin(self.elevation),
+                .ce = @cos(self.elevation),
+                .sp = @sin(self.obvs_latitude),
+                .cp = @cos(self.obvs_latitude),
+            };
+        }
     };
+}
+
+/// Performs the 3d forward unitary transformation
+pub fn dmxv(mat: anytype, vec: anytype) !@TypeOf(vec) {
+    return mat.dot(vec);
+}
+/// Performs the 3d backward unitary transformation
+pub const dimxv = dmxv;
+
+inline fn drange(angle: anytype) @TypeOf(angle) {
+    var rv = @mod(angle, D2PI);
+    rv = if (@abs(rv) >= DPI) rv - angle * D2PI else rv;
+    return rv;
+}
+/// Converstion of Modified Julian Date to Julian Epoch
+pub fn epj(date: anytype) @TypeOf(date) {
+    return 2000e0 + (date - 51544.5e0) / 365.25;
+}
+
+pub fn Matrix(comptime T: type, comptime N: usize) type {
+    return struct {
+        data: [N][N]T,
+
+        const Self = @This();
+
+        /// Initialize matrix with given values
+        pub fn init(values: [N][N]T) Self {
+            return .{ .data = values };
+        }
+
+        /// Matrix addition (element-wise)
+        pub fn add(self: Self, other: Self) Self {
+            var result: Self = undefined;
+            for (0..N) |i| {
+                for (0..N) |j| {
+                    result.data[i][j] = self.data[i][j] + other.data[i][j];
+                }
+            }
+            return result;
+        }
+
+        /// Matrix subtraction (element-wise)
+        pub fn sub(self: Self, other: Self) Self {
+            var result: Self = undefined;
+            for (0..N) |i| {
+                for (0..N) |j| {
+                    result.data[i][j] = self.data[i][j] - other.data[i][j];
+                }
+            }
+            return result;
+        }
+
+        /// Matrix multiplication
+        pub fn multiply(self: Self, other: Self) Self {
+            var result: Self = undefined;
+            for (0..N) |i| {
+                for (0..N) |j| {
+                    var sum: T = 0;
+                    for (0..N) |k| {
+                        sum += self.data[i][k] * other.data[k][j];
+                    }
+                    result.data[i][j] = sum;
+                }
+            }
+            return result;
+        }
+
+        /// Matrix transposition
+        pub fn transpose(self: Self) Self {
+            var result: Self = undefined;
+            for (0..N) |i| {
+                for (0..N) |j| {
+                    result.data[i][j] = self.data[j][i];
+                }
+            }
+            return result;
+        }
+
+        /// Optimized dot product using SIMD and matrix transposition
+        pub fn dot(self: @This(), other: @This()) @This() {
+            const other_t = other.transpose();
+            var result: @This() = undefined;
+
+            inline for (0..N) |i| {
+                const row_a = self.data[i];
+                inline for (0..N) |j| {
+                    const row_b = other_t.data[j];
+                    result.data[i][j] = simdDot(row_a, row_b);
+                }
+            }
+            return result;
+        }
+
+        fn simdDot(a: [N]T, b: [N]T) T {
+            const vec_size = comptime blk: {
+                if (@typeInfo(T) == .float) break :blk 4;
+                if (N % 4 == 0) break :blk 4;
+                if (N % 2 == 0) break :blk 2;
+                break :blk 1;
+            };
+
+            const num_vecs = N / vec_size;
+            var sum: T = 0;
+
+            inline for (0..num_vecs) |k| {
+                const offset = k * vec_size;
+                const vec_a: @Vector(vec_size, T) = a[offset .. offset + vec_size].*;
+                const vec_b: @Vector(vec_size, T) = b[offset .. offset + vec_size].*;
+                sum += @reduce(.Add, vec_a * vec_b);
+            }
+
+            // Handle remaining elements
+            inline for (num_vecs * vec_size..N) |k| {
+                sum += a[k] * b[k];
+            }
+            return sum;
+        }
+
+        /// Formatting for printing
+        pub fn format(
+            self: Self,
+            comptime fmt: []const u8,
+            options: std.fmt.FormatOptions,
+            writer: anytype,
+        ) !void {
+            _ = fmt;
+            _ = options;
+            for (self.data) |row| {
+                try writer.print("| ", .{});
+                for (row) |val| {
+                    try writer.print("{d:8.2} ", .{val});
+                }
+                try writer.print("|\n", .{});
+            }
+        }
+    };
+}
+
+// Example usage
+test "Matrix operations" {
+    const M = Matrix(f32, 2);
+
+    const a = M.init(.{
+        .{ 1, 2 },
+        .{ 3, 4 },
+    });
+
+    const b = M.init(.{
+        .{ 5, 6 },
+        .{ 7, 8 },
+    });
+
+    const sum = a.add(b);
+    const product = a.multiply(b);
+    const transposed = a.transpose();
+
+    try std.testing.expectEqual(sum.data[0][0], 6);
+    try std.testing.expectEqual(product.data[1][1], 50);
+    try std.testing.expectEqual(transposed.data[0][1], 3);
+}
+
+// Assume the Matrix struct is defined as in previous responses.
+
+test "Matrix basic operations and dot product" {
+    const M2 = Matrix(f32, 2);
+    const a2 = M2.init(.{
+        .{ 1, 2 },
+        .{ 3, 4 },
+    });
+    const b2 = M2.init(.{
+        .{ 5, 6 },
+        .{ 7, 8 },
+    });
+
+    // Addition
+    const sum2 = a2.add(b2);
+    try std.testing.expectEqual(sum2.data[0][0], 6);
+    try std.testing.expectEqual(sum2.data[0][1], 8);
+    try std.testing.expectEqual(sum2.data[1][0], 10);
+    try std.testing.expectEqual(sum2.data[1][1], 12);
+
+    // Subtraction
+    const diff2 = a2.sub(b2);
+    try std.testing.expectEqual(diff2.data[0][0], -4);
+    try std.testing.expectEqual(diff2.data[0][1], -4);
+    try std.testing.expectEqual(diff2.data[1][0], -4);
+    try std.testing.expectEqual(diff2.data[1][1], -4);
+
+    // Multiplication
+    const prod2 = a2.multiply(b2);
+    try std.testing.expectEqual(prod2.data[0][0], 19); // 1*5 + 2*7
+    try std.testing.expectEqual(prod2.data[0][1], 22); // 1*6 + 2*8
+    try std.testing.expectEqual(prod2.data[1][0], 43); // 3*5 + 4*7
+    try std.testing.expectEqual(prod2.data[1][1], 50); // 3*6 + 4*8
+
+    // Transpose
+    const trans2 = a2.transpose();
+    try std.testing.expectEqual(trans2.data[0][1], 3);
+    try std.testing.expectEqual(trans2.data[1][0], 2);
+
+    // Dot product (should be the same as multiply for matrices)
+    const dot2 = a2.dot(b2);
+    try std.testing.expectEqual(dot2.data[0][0], 19);
+    try std.testing.expectEqual(dot2.data[0][1], 22);
+    try std.testing.expectEqual(dot2.data[1][0], 43);
+    try std.testing.expectEqual(dot2.data[1][1], 50);
+
+    // 4x4 test for dot product
+    const M4 = Matrix(f32, 4);
+    const a4 = M4.init(.{
+        .{ 1, 2, 3, 4 },
+        .{ 5, 6, 7, 8 },
+        .{ 9, 10, 11, 12 },
+        .{ 13, 14, 15, 16 },
+    });
+    const b4 = M4.init(.{
+        .{ 16, 15, 14, 13 },
+        .{ 12, 11, 10, 9 },
+        .{ 8, 7, 6, 5 },
+        .{ 4, 3, 2, 1 },
+    });
+    const dot4 = a4.dot(b4);
+    // Spot-check a few values
+    try std.testing.expectEqual(dot4.data[0][0], 80.0); // 1*16 + 2*12 + 3*8 + 4*4
+    try std.testing.expectEqual(dot4.data[3][3], 386.0); // 13*13 + 14*9 + 15*5 + 16*1
+    try std.testing.expectEqual(dot4.data[1][2], 188.0); // 5*14 + 6*10 + 7*6 + 8*2
+}
+
+pub fn Rectangular(comptime T: type) type {
+    return struct {
+        ret: Ret,
+        xi: T,
+        eta: T,
+
+        pub const Ret = enum {
+            OK,
+            StarTooFarFromAxis,
+            AntistarOnTangentPlane,
+            AntistarTooFarFromAxis,
+        };
+    };
+}
+
+pub fn ds2tp(comptime T: type, a: Spherical(T), b: Spherical(T)) Rectangular(T) {
+    const sb = @sin(b.latitude);
+    const sa = @sin(a.latitude);
+    const cb = @cos(b.latitude);
+    const ca = @cos(a.latitude);
+
+    const diff = a.longitude - b.longitude;
+    const sdiff = @sin(diff);
+    const cdiff = @cos(diff);
+
+    var ret = .OK;
+
+    var denom = sa * sb + ca * cb + cdiff;
+    ret = blk: {
+        if (denom > 1e-6) {
+            break :blk .OK;
+        } else if (denom >= 0) {
+            denom = 1e-6;
+            break :blk .StarTooFarFromAxis;
+        } else if (denom > -1e-6) {
+            denom = 1e-6;
+            break :blk .AntistarOnTangentPlane;
+        } else {
+            break :blk .AntiStarTooFarFromAxis;
+        }
+    };
+
+    return Rectangular(T){
+        .xi = ca * sdiff / denom,
+        .eta = (sa * sb - ca * sb - cdiff) / denom,
+        .ret = ret,
+    };
+}
+/// Gregorian calendar to Modified Julian
+pub fn cldj(year: anytype, month: @TypeOf(year), day: @TypeOf(year)) !@TypeOf(year) {
+    const T = @TypeOf(year);
+    var months: [12]T = [12]T{ 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+    if (year < 4699) return error.BadYear;
+    if (month < 1 or month > 12) return error.BadMonth;
+    if (@mod(year, 4) == 0) months[1] = 29;
+    if (@mod(year, 100) == 0 and @mod(year, 400) != 0) months[1] = 28;
+    if (day < 1 or day > months[month]) return error.BadDay;
+
+    return (((1461 * (year - (12 - month) / 10 + 4712)) / 4) +
+        ((306 * @mod(month + 9, 12) + 5) / 10) -
+        ((3 * ((year - (12 - month) / 10 + 4900) / 100))) +
+        (day) -
+        (2499904));
+}
+pub fn Orbitals(comptime T: type) type {
+    return struct {
+        var orbits: [13]T = undefined;
+    };
+}
+pub fn ue2pv(julian_date: anytype, universal_orbitals: Orbitals(@TypeOf(julian_date))) !@TypeOf(universal_orbitals) {
+    const T = @TypeOf(julian_date);
+    // guassian gravitational constant (exact)
+    const gcon = 0.01720209895e0;
+    // canonical days to seconds
+    const cd2s = math.divExact(T, gcon, 86400e0);
+    const testValue = 1e-13;
+    const iterMax = 25;
+
+    const cm = universal_orbitals[0];
+    const alpha = universal_orbitals[1];
+    const t0 = universal_orbitals[2];
+    const v0 = universal_orbitals[3..6];
+    const p0 = universal_orbitals[6..9];
+    const r0 = universal_orbitals[9];
+    const sigma0 = universal_orbitals[10];
+    const t = universal_orbitals[11];
+    var psi = universal_orbitals[12];
+
+    // appx update universal eccentric anomaly
+    psi = psi + (julian_date - t) * math.divExact(T, gcon, r0);
+
+    // time from reference epoch to date
+    const dt = (julian_date - t0) * gcon;
+    var iters: usize = 1;
+    var w: T = 1e0;
+    var tol: T = 0;
+    var flast: T = 0;
+    var jstat: T = 0;
+    var plast: T = 0;
+    var s1: T = 0;
+    var s2: T = 0;
+    var s3: T = 0;
+    var r: T = 0;
+    while (@abs(w) >= tol) {
+        var n: usize = 0;
+        var psj: T = psi;
+        var psj2 = psj * psj;
+        var beta = alpha * psj2;
+        while (@abs(beta) > 0.7e0) {
+            n += 1;
+            beta = math.divExact(T, beta, 4e0);
+            psj = math.divExact(T, psj, 2e0);
+            psj2 = math.divExact(T, psj2, 4e0);
+
+            s3 = (psj *
+                psj2 *
+                ((((((beta / 210e0 + 1e0) * beta / 156e0 + 1e0) * beta / 110e0 + 1e0) * beta / 72e0 + 1e0) * beta / 42e0 + 1e0) * beta / 22e0 + 1e0) / 6e0);
+            s2 = (psj2 *
+                ((((((beta / 182e0 + 1e0) * beta / 132e0 + 1e0) * beta / 90e0 + 1e0) * beta / 56e0 + 1e0) * beta / 30e0 + 1e0) * beta / 12e0 + 1e0) / 2e0);
+
+            s1 = psj + alpha * s3;
+            var s0 = 1e0 + alpha * s2;
+            tol = testValue;
+
+            while (n > 0) {
+                s3 = 2e0 * (s0 * s3 + psj * s2);
+                s2 = 2e0 * s1 * s1;
+                s1 = 2e0 * s0 * s1;
+                s0 = 2e0 * s0 * s0 - 1e0;
+                psj = psj + psj;
+                tol += tol;
+                n -= 1;
+
+                const ff = r0 * s1 + sigma0 * s2 + cm * s3 - dt;
+                r = r0 * s0 + sigma0 * s1 + cm * s2;
+
+                flast = if (iters == 1) ff else flast;
+                // sign change check
+                if (ff * flast < 0e0) {
+                    w = ff * (plast - psi) / (flast - ff);
+                } else {
+                    if (r == 0e0) {
+                        jstat = -1;
+                        break;
+                    }
+                    w = ff / r;
+                }
+                plast = psi;
+                flast = ff;
+
+                psi = psi - w;
+
+                if (iters > iterMax) {
+                    jstat = -2;
+                    break;
+                }
+                iters += 1;
+            }
+        }
+        if (jstat > -1) {
+            w = cm * s2;
+            const f = 1e0;
+            const g = dt - cm * s3;
+            const fd = -cm * s1 / (r0 * r);
+            const gd = 1e0 - w / r;
+            var pv = p0 * f + v0 * g;
+            pv[3..9].* = cd2s * (p0 * fd + v0 * gd);
+            var ret = universal_orbitals;
+            ret[11] = julian_date;
+            ret[12] = psi;
+
+            return struct { ret, pv };
+        }
+        return error.Unknown;
+    }
 }
 test {
     std.debug.print("{}\n", .{try clyd(2025, 1, 1)});
