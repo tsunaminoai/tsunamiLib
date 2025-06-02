@@ -443,6 +443,7 @@ pub fn epj(date: anytype) @TypeOf(date) {
     return 2000e0 + (date - 51544.5e0) / 365.25;
 }
 
+pub const Mat = struct { T: type, size_n: usize, ptr: *anyopaque };
 pub fn Matrix(comptime T: type, comptime N: usize) type {
     return struct {
         data: [N][N]T,
@@ -452,6 +453,104 @@ pub fn Matrix(comptime T: type, comptime N: usize) type {
         /// Initialize matrix with given values
         pub fn init(values: [N][N]T) Self {
             return .{ .data = values };
+        }
+        pub fn mat(self: *Self) Mat {
+            return .{
+                .T = T,
+                .size_n = N,
+                .ptr = self,
+            };
+        }
+
+        const MatResult = struct {
+            inverse: Self,
+            determinant: T,
+            soltuions: [N]T,
+        };
+        pub fn dmat(self: *Self, unknowns: *[N]T) !MatResult {
+            //TODO: copy self into mat result to work on
+            //TODO: Return errors?
+            var iw: [N]T = [_]T{0} ** N;
+            const sfa = 1e-20;
+
+            var jf: i32 = 0;
+            var d: T = 1e0;
+            for (0..N) |k| {
+                var amx = @abs(self.data[k][k]);
+                var imx = k;
+                if (k != N) {
+                    for (k..N) |i| {
+                        const t = @abs(self.data[i][k]);
+                        if (t > amx) {
+                            amx = t;
+                            imx = i;
+                        }
+                    }
+                }
+                if (amx < sfa)
+                    jf = -1
+                else {
+                    if (imx != k) {
+                        for (0..N) |j| {
+                            const t = self.data[k][j];
+                            self.data[k][j] = self.data[imx][j];
+                            self.data[imx][j] = t;
+                        }
+                        const t = unknowns[k];
+                        unknowns[k] = unknowns[imx];
+                        unknowns[imx] = t;
+                        d = -d;
+                    }
+
+                    iw[k] = imx;
+                    var akk = self.data[k][k];
+                    d = d * akk;
+                    if (@abs(d) < sfa)
+                        jf = -1
+                    else {
+                        akk = 1e0 / akk;
+                        self.data[k][k] = akk;
+                        for (0..N) |j|
+                            self.data[k][j] = if (j != k) self.data[k][j] * akk else self.data[k][j];
+
+                        const yk = unknowns[k] * akk;
+                        unknowns[k] = yk;
+                        for (0..N) |i| {
+                            const aik = self.data[i][k];
+                            if (i != k) {
+                                for (0..N) |j| {
+                                    self.data[i][j] = if (j != k) self.data[i][j] - aik * self.data[k][j] else self.data[i][j];
+                                }
+                                unknowns[i] = unknowns[i] - aik * yk;
+                            }
+                        }
+
+                        for (0..N) |i| {
+                            self.data[i][k] = if (i != k) -self.data[i][k] * akk else self.data[i][k];
+                        }
+                    }
+                }
+            }
+            if (jf != 0) {
+                d = 0;
+            } else {
+                for (0..N) |k| {
+                    const np1mk = N + 1 - k;
+                    const ki = iw[np1mk];
+                    if (np1mk != ki) {
+                        for (0..N) |i| {
+                            const t = self.data[i][np1mk];
+                            self.data[i][np1mk] = self.data[i][ki];
+                            self.data[i][ki] = t;
+                        }
+                    }
+                }
+            }
+            return MatResult{
+                .determinant = d,
+                .inverse = self,
+                .soltuions = iw,
+            };
         }
 
         /// Matrix addition (element-wise)
