@@ -121,11 +121,33 @@ pub fn clyd(year: anytype, month: @TypeOf(year), day: @TypeOf(year)) !std.meta.T
 }
 pub fn Cartesian(comptime T: type) type {
     return struct {
-        x: T,
-        y: T,
-        z: T,
+        x: T = 0,
+        y: T = 0,
+        z: T = 0,
+
+        const Self = @This();
+        /// Position angle of one celestial direction with respect to another.
+        /// # The result is the bearing (position angle), in radians, of point
+        /// # V2 with respect to point V1.  It is in the range +/- pi.  The
+        /// # sense is such that if V2 is a small distance east of V1, the
+        /// # bearing is about +pi/2.  Zero is returned if the two points
+        /// # are coincident.
+        pub fn bearingAngle(self: Self, other: Self) T {
+            var v1: Self = self;
+            const w = @sqrt(self.x * self.x + self.y * self.y + self.z * self.z);
+            if (w != 0e0) {
+                v1.x /= w;
+                v1.y /= w;
+                v1.z /= w;
+            }
+            const sq = other.y * v1.x - other.x * v1.y;
+            const cq = other.z * (v1.x * v1.x + v1.y * v1.y) - v1.z * (other.x * v1.x + other.y * v1.y);
+            return std.math.atan2(sq, if (cq == 0 and sq == 0) 1 else cq);
+        }
     };
 }
+
+pub const DirectionCosines = Cartesian;
 pub fn Spherical(comptime T: type) type {
     return struct {
         latitude: T,
@@ -175,7 +197,7 @@ pub fn dcc2s(comptime T: type, coord: Cartesian(T)) Spherical(T) {
 ///   the z axis at the +ve latitude pole.
 ///
 ///   Last revision:   26 December 2004
-pub fn dcs2c(comptime T: type, sphere: Spherical(T)) Cartesian(T) {
+pub fn dcs2c(comptime T: type, sphere: Spherical(T)) DirectionCosines(T) {
     return sphere.direction_cosines();
 }
 
