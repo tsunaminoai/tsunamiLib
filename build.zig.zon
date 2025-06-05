@@ -20,6 +20,15 @@
             .url = "https://github.com/kivikakk/koino/archive/refs/heads/main.zip",
             .hash = "koino-0.1.0-S9LuWmSKAgAcN0juy5hqSQNRPP4WtKiWTi3xG_1pepAZ",
         },
+
+        .ansi_term = .{
+            .url = "git+https://github.com/ziglibs/ansi_term#73b7efddb1d871d7a3528e63bd391d202fb66128",
+            .hash = "ansi_term-0.1.0-_baAywpoAABEqsPmS5Jz_CddDCrG8qdIyRIESH8D2fzd",
+        },
+        .zalgebra = .{
+            .url = "git+https://github.com/kooparse/zalgebra#412c3e1cddcf6b8494a6c008dd152c6e0ec5e846",
+            .hash = "zalgebra-0.0.0-aaiVSk5nAQA4CIV_flm1iIpWiSrVcxggA9y_aaa-TtdR",
+        },
     },
     .paths = .{
         // This makes *all* files, recursively, included in this package. It is generally

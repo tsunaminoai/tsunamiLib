@@ -22,6 +22,10 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    const zla = b.dependency("zalgebra", .{
+        .target = target,
+        .optimize = optimize,
+    });
 
     const lib = b.addStaticLibrary(.{
         .name = "tsunamiLib",
@@ -32,6 +36,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     lib.root_module.addImport("koino", koino_dep.module("koino"));
+    lib.root_module.addImport("zla", zla.module("zalgebra"));
 
     // This declares intent for the library to be installed into the standard
     // location when the user invokes the "install" step (the default step when

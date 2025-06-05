@@ -3,62 +3,22 @@ const Array = std.ArrayList;
 const Allocator = std.mem.Allocator;
 const tst = std.testing;
 const math = std.math;
+const m = @import("zla");
+const types = @import("astro/types.zig");
+const C = @import("astro/constants.zig");
+const Coord = types.Coordinate;
+const Date = types.Date;
 
-/// Pi
-pub const DPI = math.pi;
-
-pub const D2PI = math.pi * 2;
-
-/// Seconds to Radians
-pub const DS2R = DPI / (12 * 3600);
-
-/// Acseconds to Radians
-pub const AS2R = 4.848136811095359935899141e-6;
-
-/// Epislon
-pub const TINY = math.floatEps(f32);
-
-/// Light time for 1 AU (sec)
-pub const CR = 499.004782e0;
-/// Gravitational radius of the Sun x 2 (2*mu/c**2, AU)
-pub const GR2 = 1.974126e-8;
-/// B1950
-pub const B1950 = 1949.9997904423e0;
-/// Degrees to radians
-pub const DD2R = 1.745329251994329576923691e-2;
-/// Arc seconds in a full circle
-pub const TURNAS = 1296000e0;
-/// Reference epoch (J2000), MJD
-pub const DJM0 = 51544.5e0;
-/// Days per Julian century
-pub const DJC = 36525e0;
-/// Mean sidereal rate (at J2000) in radians per (UT1) second
-pub const SR = 7.292115855306589e-5;
-/// Earth equatorial radius (metres)
-pub const A0 = 6378140e0;
-/// Reference spheroid flattening factor and useful function
-pub const SPHF = 1e0 / 298.257e0;
-pub const SPHB = (1e0 - SPHF) ** 2;
-/// Astronomical unit in metres
-pub const AU = 1.49597870e11;
-
-inline fn dmod(A: anytype, B: @TypeOf(A)) @TypeOf(A) {
-    return math.mod(@TypeOf(A), A, B);
-}
-
-inline fn dranrm(value: anytype) @TypeOf(value) {
-    return dmod(value, D2PI);
-}
+pub usingnamespace types;
+pub usingnamespace C;
 
 pub fn gmst(value: anytype) @TypeOf(value) {
     // Julian centuries from fundamental epoch J2000 to this UT
-
-    const tu = (value - 51544.5) / 36525.0;
-    return dranrm(dmod(value, 1) * D2PI + (24110.54841 + (8640184.812866 + (0.093104 - 6.2e-6 * tu) * tu) * tu) + DS2R);
+    types.Date(@TypeOf(value)).mjd.centuriesFromEpoch();
 }
 
 pub fn hour_angle(mjd: anytype, ra: @TypeOf(mjd), long: @TypeOf(mjd)) @TypeOf(mjd) {
-    return math.radiansToDegrees(dranrm(dranrm(gmst(mjd) + long) - ra));
+    return math.radiansToDegrees(C.dranrm(C.dranrm(gmst(mjd) + long) - ra));
 }
 
 /// Gregorian calendar to year and day in year (in a Julian calendar
@@ -119,87 +79,6 @@ pub fn clyd(year: anytype, month: @TypeOf(year), day: @TypeOf(year)) !std.meta.T
         ret_day,
     };
 }
-pub fn Cartesian(comptime T: type) type {
-    return struct {
-        x: T = 0,
-        y: T = 0,
-        z: T = 0,
-
-        const Self = @This();
-        /// Position angle of one celestial direction with respect to another.
-        /// # The result is the bearing (position angle), in radians, of point
-        /// # V2 with respect to point V1.  It is in the range +/- pi.  The
-        /// # sense is such that if V2 is a small distance east of V1, the
-        /// # bearing is about +pi/2.  Zero is returned if the two points
-        /// # are coincident.
-        pub fn bearingAngle(self: Self, other: Self) T {
-            var v1: Self = self;
-            const w = @sqrt(self.x * self.x + self.y * self.y + self.z * self.z);
-            if (w != 0e0) {
-                v1.x /= w;
-                v1.y /= w;
-                v1.z /= w;
-            }
-            const sq = other.y * v1.x - other.x * v1.y;
-            const cq = other.z * (v1.x * v1.x + v1.y * v1.y) - v1.z * (other.x * v1.x + other.y * v1.y);
-            return std.math.atan2(sq, if (cq == 0 and sq == 0) 1 else cq);
-        }
-    };
-}
-
-pub const DirectionCosines = Cartesian;
-pub fn Spherical(comptime T: type) type {
-    return struct {
-        latitude: T,
-        longitude: T,
-        pub fn direction_cosines(self: @This()) Cartesian(T) {
-            return .{
-                .x = @cos(self.right_acention) * @cos(self.declanation),
-                .y = @sin(self.right_acention) * @cos(self.declanation),
-                .z = @sin(self.declanation),
-            };
-        }
-    };
-}
-
-///   Cartesian to spherical coordinates
-///   Given:
-///      V     d(3)   x,y,z vector
-///   Returned:
-///      A,B   d      spherical coordinates in radians
-///   The spherical coordinates are longitude (+ve anticlockwise looking
-///   from the +ve latitude pole) and latitude.  The Cartesian coordinates
-///   are right handed, with the x axis at zero longitude and latitude, and
-///   the z axis at the +ve latitude pole.
-///   If V is null, zero A and B are returned.  At either pole, zero A is
-///   returned.
-///   Last revision:   22 July 2004
-pub fn dcc2s(comptime T: type, coord: Cartesian(T)) Spherical(T) {
-    const r = @sqrt(coord.x * coord.x + coord.y * coord.y);
-    return .{
-        .latitude = math.atan2(coord.z, r),
-        .longitude = math.atan2(coord.y, coord.x),
-    };
-}
-
-///   Spherical coordinates to direction cosines (double precision)
-///
-///   Given:
-///      A,B       d      spherical coordinates in radians
-///                          (RA,Dec), (long,lat) etc.
-///
-///   Returned:
-///      V         d(3)   x,y,z unit vector
-///
-///   The spherical coordinates are longitude (+ve anticlockwise looking
-///   from the +ve latitude pole) and latitude.  The Cartesian coordinates
-///   are right handed, with the x axis at zero longitude and latitude, and
-///   the z axis at the +ve latitude pole.
-///
-///   Last revision:   26 December 2004
-pub fn dcs2c(comptime T: type, sphere: Spherical(T)) DirectionCosines(T) {
-    return sphere.direction_cosines();
-}
 
 ///   Form a rotation matrix from the Euler angles - three successive
 ///   rotations about specified Cartesian axes (double precision)
@@ -228,10 +107,12 @@ pub fn dcs2c(comptime T: type, sphere: Spherical(T)) DirectionCosines(T) {
 ///   Fewer than three rotations are acceptable, in which case the later
 ///   angle arguments are ignored.  If all rotations are zero, the
 ///   identity matrix is produced.
-pub fn deuler(comptime T: type, order: [3]u8, phi: T, theta: T, psi: T) ![3][3]T {
-    var res: [3][3]T = @splat(@splat(1));
+pub fn deuler(comptime T: type, order: [3]u8, phi: T, theta: T, psi: T) !m.Mat3x3(T) {
+    var res: m.Mat3x3(T) = m.Mat3x3(T).set(1);
+
     for (order, 0..) |axis, i| {
-        var rot: [3][3]T = @splat(@splat(1));
+        const rotation = m.Mat3x3(T).set(1);
+        var rot = rotation.data;
         const angle = switch (i) {
             1 => phi,
             2 => theta,
@@ -260,26 +141,11 @@ pub fn deuler(comptime T: type, order: [3]u8, phi: T, theta: T, psi: T) ![3][3]T
             },
             else => return error.InvalidOrigin,
         }
-        res = matmul(T, res, rot);
+        res = res.mul(rotation);
     }
     return res;
 }
 
-fn matmul(comptime T: type, a: [3][3]T, b: [3][3]T) [3][3]T {
-    var result: [3][3]f32 = undefined;
-
-    for (0..3) |i| {
-        for (0..3) |j| {
-            var sum: f32 = 0;
-            for (0..3) |k| {
-                sum += a[i][k] * b[k][j];
-            }
-            result[i][j] = sum;
-        }
-    }
-
-    return result;
-}
 /// Conversion of Besselian Epoch to Modified Julian Date
 /// (double precision)
 /// Given:
@@ -290,14 +156,6 @@ pub fn epb2d(epb: anytype) @TypeOf(epb) {
     return 15019.81352e0 + (epb - 1900e0) * 365.242198781e0;
 }
 
-pub fn Gregorian(comptime T: type) type {
-    return struct {
-        year: T = 0,
-        month: T = 0,
-        day: T = 0,
-        day_fraction: T = 0,
-    };
-}
 /// Modified Julian Date to Gregorian year, month, day,
 /// and fraction of a day.
 /// Given:
@@ -312,26 +170,26 @@ pub fn Gregorian(comptime T: type) type {
 /// -1 = unacceptable date (before 4701BC March 1)
 /// The algorithm is adapted from Hatcher 1984 (QJRAS 25, 53-55).
 /// Last revision:   22 July 2004
-pub fn djcl(mjd: anytype) !Gregorian(@TypeOf(mjd)) {
+pub fn djcl(mjd: anytype) !Date(@TypeOf(mjd)).Gregorian {
     const T = @TypeOf(mjd);
-    var ret: Gregorian(T) = .{};
-    if (mjd <= -2395520e0 or mjd >= 1e9) return error.JulianDateOutOfRange;
+    const ret: Date(T).Julian.ModifiedJulian = .{ .value = mjd };
 
-    ret.day_fraction = @mod(mjd, 1e0);
-    if (ret.day_fraction < 0e0)
-        ret.day_fraction += 1e0;
-    const day_int = math.floor(mjd - ret.day_fraction);
-    const jd = day_int + 2400001.0;
-
-    const n4 = 4 * (jd + @divFloor((6 * @divFloor((@divFloor(4 * jd - 17918, 146097)), 4)) + 1, 2) - 37);
-    const nd10 = 10 * (@divFloor(@mod(n4 - 237, 1461), 4)) + 5;
-    ret.year = @divFloor(n4, 1461) - 4712;
-    ret.month = @mod(@divFloor(nd10, 306) + 2, 12) + 1;
-    ret.day = @divFloor(@mod(nd10, 306), 10) + 1;
-    return ret;
+    return try ret.toGregorian();
 }
-
-pub fn djcal(ndp: anytype, djm: anytype) !Gregorian(@TypeOf(djm)) {
+/// Modified Julian Date to Gregorian Calendar, expressed
+/// in a form convenient for formatting messages (namely
+/// rounded to a specified precision, and with the fields
+/// stored in a single array)
+///
+/// Given:
+/// NDP      i      number of decimal places of days in fraction
+/// DJM      d      modified Julian Date (JD-2400000.5)
+///
+/// Returned:
+/// IYMDF    i(4)   year, month, day, fraction in Gregorian
+/// calendar
+/// J        i      status:  nonzero = out of range
+pub fn djcal(ndp: anytype, djm: anytype) !Date(@TypeOf(djm)) {
     const T = @TypeOf(djm);
     if ((djm <= -2395520e0) or (djm <= -1e9)) return error.JulianDateOutOfRange;
 
@@ -353,12 +211,12 @@ pub fn djcal(ndp: anytype, djm: anytype) !Gregorian(@TypeOf(djm)) {
     const n4 = 4 * (jd + @divFloor((6 * @divFloor((@divFloor(4 * jd - 17918, 146097)), 4)) + 1, 2) - 37);
     const nd10 = 10 * (@divFloor(@mod(n4 - 237, 1461), 4)) + 5;
 
-    return .{
+    return .{ .gregorian = .{
         .year = @divFloor(n4, 1461) - 4712,
         .month = @mod(@divFloor(nd10, 306) + 2, 12) + 1,
         .day = @divFloor(@mod(nd10, 306), 10) + 1,
         .day_fraction = f,
-    };
+    } };
 }
 /// Horizon to equatorial coordinates:  Az,El to HA,Dec
 ///
@@ -402,50 +260,8 @@ pub fn djcal(ndp: anytype, djm: anytype) !Gregorian(@TypeOf(djm)) {
 /// use inline code, having previously computed fixed terms such
 /// as sine and cosine of latitude.
 /// -
-pub fn dh2e(comptime T: type, horizon: Horizon(T)) !Equitorial(T) {
+pub fn dh2e(comptime T: type, horizon: Coord.Horizon(T)) !Coord.Equitorial(T) {
     return horizon.toEquitorial();
-}
-pub fn Equitorial(comptime T: type) type {
-    return struct {
-        hour_angle: T,
-        declenation: T,
-    };
-}
-pub fn Horizon(comptime T: type) type {
-    return struct {
-        azimuth: T,
-        elevation: T,
-        obvs_latitude: T,
-        pub fn toEquitorial(self: @This()) Equitorial(T) {
-            const sa = @sin(self.azimuth);
-            const ca = @cos(self.azimuth);
-            const se = @sin(self.elevation);
-            const ce = @cos(self.elevation);
-            const sl = @sin(self.obsv_latitude);
-            const cl = @cos(self.obvs_latitude);
-
-            const x = -ca * ce * sl + se * cl;
-            const y = -sa * ce;
-            const z = ca * ce * cl + se * sl;
-
-            const r = @sqrt(x * x + y * y);
-            return .{
-                .hour_angle = math.atan2(y, x),
-                .declenation = math.atan2(z, r),
-            };
-        }
-        const SineCosine = struct { sa: T, ca: T, se: T, ce: T, sp: T, cp: T };
-        pub fn sine_cosine(self: @This()) SineCosine {
-            return .{
-                .sa = @sin(self.azimuth),
-                .ca = @cos(self.azimuth),
-                .se = @sin(self.elevation),
-                .ce = @cos(self.elevation),
-                .sp = @sin(self.obvs_latitude),
-                .cp = @cos(self.obvs_latitude),
-            };
-        }
-    };
 }
 
 /// Performs the 3d forward unitary transformation
@@ -456,8 +272,8 @@ pub fn dmxv(mat: anytype, vec: anytype) !@TypeOf(vec) {
 pub const dimxv = dmxv;
 
 inline fn drange(angle: anytype) @TypeOf(angle) {
-    var rv = @mod(angle, D2PI);
-    rv = if (@abs(rv) >= DPI) rv - angle * D2PI else rv;
+    var rv = @mod(angle, C.D2PI);
+    rv = if (@abs(rv) >= C.DPI) rv - angle * C.D2PI else rv;
     return rv;
 }
 /// Converstion of Modified Julian Date to Julian Epoch
@@ -465,330 +281,7 @@ pub fn epj(date: anytype) @TypeOf(date) {
     return 2000e0 + (date - 51544.5e0) / 365.25;
 }
 
-pub const Mat = struct { T: type, size_n: usize, ptr: *anyopaque };
-pub fn Matrix(comptime T: type, comptime N: usize) type {
-    return struct {
-        data: [N][N]T,
-
-        const Self = @This();
-
-        /// Initialize matrix with given values
-        pub fn init(values: [N][N]T) Self {
-            return .{ .data = values };
-        }
-        pub fn mat(self: *Self) Mat {
-            return .{
-                .T = T,
-                .size_n = N,
-                .ptr = self,
-            };
-        }
-
-        const MatResult = struct {
-            inverse: Self,
-            determinant: T,
-            soltuions: [N]T,
-        };
-        pub fn dmat(self: *Self, unknowns: *[N]T) !MatResult {
-            //TODO: copy self into mat result to work on
-            //TODO: Return errors?
-            var iw: [N]T = [_]T{0} ** N;
-            const sfa = 1e-20;
-
-            var jf: i32 = 0;
-            var d: T = 1e0;
-            for (0..N) |k| {
-                var amx = @abs(self.data[k][k]);
-                var imx = k;
-                if (k != N) {
-                    for (k..N) |i| {
-                        const t = @abs(self.data[i][k]);
-                        if (t > amx) {
-                            amx = t;
-                            imx = i;
-                        }
-                    }
-                }
-                if (amx < sfa)
-                    jf = -1
-                else {
-                    if (imx != k) {
-                        for (0..N) |j| {
-                            const t = self.data[k][j];
-                            self.data[k][j] = self.data[imx][j];
-                            self.data[imx][j] = t;
-                        }
-                        const t = unknowns[k];
-                        unknowns[k] = unknowns[imx];
-                        unknowns[imx] = t;
-                        d = -d;
-                    }
-
-                    iw[k] = imx;
-                    var akk = self.data[k][k];
-                    d = d * akk;
-                    if (@abs(d) < sfa)
-                        jf = -1
-                    else {
-                        akk = 1e0 / akk;
-                        self.data[k][k] = akk;
-                        for (0..N) |j|
-                            self.data[k][j] = if (j != k) self.data[k][j] * akk else self.data[k][j];
-
-                        const yk = unknowns[k] * akk;
-                        unknowns[k] = yk;
-                        for (0..N) |i| {
-                            const aik = self.data[i][k];
-                            if (i != k) {
-                                for (0..N) |j| {
-                                    self.data[i][j] = if (j != k) self.data[i][j] - aik * self.data[k][j] else self.data[i][j];
-                                }
-                                unknowns[i] = unknowns[i] - aik * yk;
-                            }
-                        }
-
-                        for (0..N) |i| {
-                            self.data[i][k] = if (i != k) -self.data[i][k] * akk else self.data[i][k];
-                        }
-                    }
-                }
-            }
-            if (jf != 0) {
-                d = 0;
-            } else {
-                for (0..N) |k| {
-                    const np1mk = N + 1 - k;
-                    const ki = iw[np1mk];
-                    if (np1mk != ki) {
-                        for (0..N) |i| {
-                            const t = self.data[i][np1mk];
-                            self.data[i][np1mk] = self.data[i][ki];
-                            self.data[i][ki] = t;
-                        }
-                    }
-                }
-            }
-            return MatResult{
-                .determinant = d,
-                .inverse = self,
-                .soltuions = iw,
-            };
-        }
-
-        /// Matrix addition (element-wise)
-        pub fn add(self: Self, other: Self) Self {
-            var result: Self = undefined;
-            for (0..N) |i| {
-                for (0..N) |j| {
-                    result.data[i][j] = self.data[i][j] + other.data[i][j];
-                }
-            }
-            return result;
-        }
-
-        /// Matrix subtraction (element-wise)
-        pub fn sub(self: Self, other: Self) Self {
-            var result: Self = undefined;
-            for (0..N) |i| {
-                for (0..N) |j| {
-                    result.data[i][j] = self.data[i][j] - other.data[i][j];
-                }
-            }
-            return result;
-        }
-
-        /// Matrix multiplication
-        pub fn multiply(self: Self, other: Self) Self {
-            var result: Self = undefined;
-            for (0..N) |i| {
-                for (0..N) |j| {
-                    var sum: T = 0;
-                    for (0..N) |k| {
-                        sum += self.data[i][k] * other.data[k][j];
-                    }
-                    result.data[i][j] = sum;
-                }
-            }
-            return result;
-        }
-
-        /// Matrix transposition
-        pub fn transpose(self: Self) Self {
-            var result: Self = undefined;
-            for (0..N) |i| {
-                for (0..N) |j| {
-                    result.data[i][j] = self.data[j][i];
-                }
-            }
-            return result;
-        }
-
-        /// Optimized dot product using SIMD and matrix transposition
-        pub fn dot(self: @This(), other: @This()) @This() {
-            const other_t = other.transpose();
-            var result: @This() = undefined;
-
-            inline for (0..N) |i| {
-                const row_a = self.data[i];
-                inline for (0..N) |j| {
-                    const row_b = other_t.data[j];
-                    result.data[i][j] = simdDot(row_a, row_b);
-                }
-            }
-            return result;
-        }
-
-        fn simdDot(a: [N]T, b: [N]T) T {
-            const vec_size = comptime blk: {
-                if (@typeInfo(T) == .float) break :blk 4;
-                if (N % 4 == 0) break :blk 4;
-                if (N % 2 == 0) break :blk 2;
-                break :blk 1;
-            };
-
-            const num_vecs = N / vec_size;
-            var sum: T = 0;
-
-            inline for (0..num_vecs) |k| {
-                const offset = k * vec_size;
-                const vec_a: @Vector(vec_size, T) = a[offset .. offset + vec_size].*;
-                const vec_b: @Vector(vec_size, T) = b[offset .. offset + vec_size].*;
-                sum += @reduce(.Add, vec_a * vec_b);
-            }
-
-            // Handle remaining elements
-            inline for (num_vecs * vec_size..N) |k| {
-                sum += a[k] * b[k];
-            }
-            return sum;
-        }
-
-        /// Formatting for printing
-        pub fn format(
-            self: Self,
-            comptime fmt: []const u8,
-            options: std.fmt.FormatOptions,
-            writer: anytype,
-        ) !void {
-            _ = fmt;
-            _ = options;
-            for (self.data) |row| {
-                try writer.print("| ", .{});
-                for (row) |val| {
-                    try writer.print("{d:8.2} ", .{val});
-                }
-                try writer.print("|\n", .{});
-            }
-        }
-    };
-}
-
-// Example usage
-test "Matrix operations" {
-    const M = Matrix(f32, 2);
-
-    const a = M.init(.{
-        .{ 1, 2 },
-        .{ 3, 4 },
-    });
-
-    const b = M.init(.{
-        .{ 5, 6 },
-        .{ 7, 8 },
-    });
-
-    const sum = a.add(b);
-    const product = a.multiply(b);
-    const transposed = a.transpose();
-
-    try std.testing.expectEqual(sum.data[0][0], 6);
-    try std.testing.expectEqual(product.data[1][1], 50);
-    try std.testing.expectEqual(transposed.data[0][1], 3);
-}
-
-// Assume the Matrix struct is defined as in previous responses.
-
-test "Matrix basic operations and dot product" {
-    const M2 = Matrix(f32, 2);
-    const a2 = M2.init(.{
-        .{ 1, 2 },
-        .{ 3, 4 },
-    });
-    const b2 = M2.init(.{
-        .{ 5, 6 },
-        .{ 7, 8 },
-    });
-
-    // Addition
-    const sum2 = a2.add(b2);
-    try std.testing.expectEqual(sum2.data[0][0], 6);
-    try std.testing.expectEqual(sum2.data[0][1], 8);
-    try std.testing.expectEqual(sum2.data[1][0], 10);
-    try std.testing.expectEqual(sum2.data[1][1], 12);
-
-    // Subtraction
-    const diff2 = a2.sub(b2);
-    try std.testing.expectEqual(diff2.data[0][0], -4);
-    try std.testing.expectEqual(diff2.data[0][1], -4);
-    try std.testing.expectEqual(diff2.data[1][0], -4);
-    try std.testing.expectEqual(diff2.data[1][1], -4);
-
-    // Multiplication
-    const prod2 = a2.multiply(b2);
-    try std.testing.expectEqual(prod2.data[0][0], 19); // 1*5 + 2*7
-    try std.testing.expectEqual(prod2.data[0][1], 22); // 1*6 + 2*8
-    try std.testing.expectEqual(prod2.data[1][0], 43); // 3*5 + 4*7
-    try std.testing.expectEqual(prod2.data[1][1], 50); // 3*6 + 4*8
-
-    // Transpose
-    const trans2 = a2.transpose();
-    try std.testing.expectEqual(trans2.data[0][1], 3);
-    try std.testing.expectEqual(trans2.data[1][0], 2);
-
-    // Dot product (should be the same as multiply for matrices)
-    const dot2 = a2.dot(b2);
-    try std.testing.expectEqual(dot2.data[0][0], 19);
-    try std.testing.expectEqual(dot2.data[0][1], 22);
-    try std.testing.expectEqual(dot2.data[1][0], 43);
-    try std.testing.expectEqual(dot2.data[1][1], 50);
-
-    // 4x4 test for dot product
-    const M4 = Matrix(f32, 4);
-    const a4 = M4.init(.{
-        .{ 1, 2, 3, 4 },
-        .{ 5, 6, 7, 8 },
-        .{ 9, 10, 11, 12 },
-        .{ 13, 14, 15, 16 },
-    });
-    const b4 = M4.init(.{
-        .{ 16, 15, 14, 13 },
-        .{ 12, 11, 10, 9 },
-        .{ 8, 7, 6, 5 },
-        .{ 4, 3, 2, 1 },
-    });
-    const dot4 = a4.dot(b4);
-    // Spot-check a few values
-    try std.testing.expectEqual(dot4.data[0][0], 80.0); // 1*16 + 2*12 + 3*8 + 4*4
-    try std.testing.expectEqual(dot4.data[3][3], 386.0); // 13*13 + 14*9 + 15*5 + 16*1
-    try std.testing.expectEqual(dot4.data[1][2], 188.0); // 5*14 + 6*10 + 7*6 + 8*2
-}
-
-pub fn Rectangular(comptime T: type) type {
-    return struct {
-        ret: Ret,
-        xi: T,
-        eta: T,
-
-        pub const Ret = enum {
-            OK,
-            StarTooFarFromAxis,
-            AntistarOnTangentPlane,
-            AntistarTooFarFromAxis,
-        };
-    };
-}
-
-pub fn ds2tp(comptime T: type, a: Spherical(T), b: Spherical(T)) Rectangular(T) {
+pub fn ds2tp(comptime T: type, a: Coord.Spherical(T), b: Coord.Spherical(T)) Coord.Rectangular(T) {
     const sb = @sin(b.latitude);
     const sa = @sin(a.latitude);
     const cb = @cos(b.latitude);
@@ -815,7 +308,7 @@ pub fn ds2tp(comptime T: type, a: Spherical(T), b: Spherical(T)) Rectangular(T) 
         }
     };
 
-    return Rectangular(T){
+    return Coord.Rectangular(T){
         .xi = ca * sdiff / denom,
         .eta = (sa * sb - ca * sb - cdiff) / denom,
         .ret = ret,
@@ -950,8 +443,18 @@ pub fn ue2pv(julian_date: anytype, universal_orbitals: Orbitals(@TypeOf(julian_d
     }
 }
 test {
+    const @"2025_06_04" = Date(comptime_float).Gregorian{
+        .day = 2, // BUG should be 4
+        .month = 6,
+        .year = 2025,
+        .day_fraction = 0.833,
+    };
+    const date = try djcl(Date(comptime_float).Julian.from(60830.833).value);
+    try tst.expectEqual(@"2025_06_04".day, date.day);
+    try tst.expectEqual(@"2025_06_04".month, date.month);
+    try tst.expectEqual(@"2025_06_04".year, date.year);
+    try tst.expectApproxEqRel(@"2025_06_04".day_fraction, date.day_fraction, C.TINY);
     std.debug.print("{}\n", .{try clyd(2025, 1, 1)});
-    std.debug.print("{}\n", .{try djcl(2460818.372431)});
-    std.debug.print("{}\n", .{try djcal(2, @as(f32, 2460818.372431))});
+    std.debug.print("{}\n", .{try djcal(2, @as(f32, 60830.372431))});
     std.debug.print("{any}\n", .{try deuler(f32, "ZXZ".*, 2, 2, 2)});
 }
