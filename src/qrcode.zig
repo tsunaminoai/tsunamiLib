@@ -4,6 +4,11 @@ const Allocator = std.mem.Allocator;
 const tst = std.testing;
 const math = std.math;
 
+const UNICODE_TEXT = "\u{03b1}\u{03b2}\u{03b3}";
+const WHITE = [_]u8{ 255, 255, 255 };
+const BLACK = [_]u8{ 0, 0, 0 };
+const RED = [_]u8{ 255, 0, 0 };
+
 pub const ErrorCorrectionLevel = enum(u2) { L = 1, M = 0, Q = 3, H = 2 };
 pub const Version = struct {
     value: u8 = 0,
@@ -634,6 +639,40 @@ const QRCode = struct {
     ///     best fit for the data to avoid data overflow errors.
     pub fn make(self: *QRCode) !void {
         _ = self; // autofix
+        //     if fit or (self.version is None):
+        //         self.best_fit(start=self.version)
+        //     if self.mask_pattern is None:
+        //         self.makeImpl(False, self.best_mask_pattern())
+        //     else:
+        //         self.makeImpl(False, self.mask_pattern)
+
+        // def makeImpl(self, test, mask_pattern):
+        //     self.modules_count = self.version * 4 + 17
+
+        //     if self.version in precomputed_qr_blanks:
+        //         self.modules = copy_2d_array(precomputed_qr_blanks[self.version])
+        //     else:
+        //         self.modules = [
+        //             [None] * self.modules_count for i in range(self.modules_count)
+        //         ]
+        //         self.setup_position_probe_pattern(0, 0)
+        //         self.setup_position_probe_pattern(self.modules_count - 7, 0)
+        //         self.setup_position_probe_pattern(0, self.modules_count - 7)
+        //         self.setup_position_adjust_pattern()
+        //         self.setup_timing_pattern()
+
+        //         precomputed_qr_blanks[self.version] = copy_2d_array(self.modules)
+
+        //     self.setup_type_info(test, mask_pattern)
+
+        //     if self.version >= 7:
+        //         self.setup_type_number(test)
+
+        //     if self.data_cache is None:
+        //         self.data_cache = util.create_data(
+        //             self.version, self.error_correction, self.data_list
+        //         )
+        //     self.map_data(self.data_cache, mask_pattern)
     }
     ///     Add data to this QR Code.
     ///
@@ -695,10 +734,16 @@ test "basic" {
 }
 
 test "errors" {
-    try tst.expectError(
-        error.InvalidVersion,
-        Version.init(0),
-    );
+    {
+        try tst.expectError(
+            error.InvalidVersion,
+            Version.init(0),
+        );
+        try tst.expectError(
+            error.InvalidVersion,
+            Version.init(41),
+        );
+    }
 
     {
         var qr = QRCode.init(
