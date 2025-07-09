@@ -6,7 +6,7 @@ const math = std.math;
 
 pub const ErrorCorrectionLevel = enum(u2) { L = 1, M = 0, Q = 3, H = 2 };
 pub const Version = struct {
-    value: u8,
+    value: u8 = 0,
 
     pub fn init(v: u8) !Version {
         const ver = Version{ .value = v };
@@ -579,28 +579,31 @@ const LUTS = struct {
 };
 
 const QRCode = struct {
-    version: Version,
-    error_correction: ErrorCorrectionLevel = .L,
-    box_size: usize = 100,
-    border: usize = 0,
-    mask_patern: ?Masks.MaskFn = null,
     modules: ?void = null,
+    options: Options = .{},
     alloc: Allocator,
+
+    pub const Options = struct {
+        version: Version = .{},
+        error_correction: ErrorCorrectionLevel = .L,
+        box_size: usize = 10,
+        border: usize = 0,
+        mask_patern: ?Masks.MaskFn = null,
+        pub fn init(version: u8) !Options {
+            const opt = Options{
+                .version = try Version.init(version),
+            };
+            return opt;
+        }
+    };
+
     pub fn init(
         a: Allocator,
-        version: u8,
-        error_correction: ErrorCorrectionLevel,
-        box_size: usize,
-        border: usize,
-        mask_patern: ?Masks.MaskFn,
-    ) !QRCode {
+        options: Options,
+    ) QRCode {
         return .{
             .alloc = a,
-            .box_size = box_size,
-            .border = border,
-            .mask_patern = mask_patern,
-            .version = try Version.init(version),
-            .error_correction = error_correction,
+            .options = options,
         };
     }
     pub fn deinit(self: *QRCode) void {
@@ -678,14 +681,13 @@ const QRCode = struct {
 };
 
 test "basic" {
-    var qr = try QRCode.init(
-        tst.allocator,
-        1,
-        .L,
-        100,
-        0,
-        null,
-    );
+    var qr = QRCode.init(tst.allocator, .{
+        .border = 1,
+        .error_correction = .L,
+        .box_size = 100,
+        .version = try .init(1),
+        .mask_patern = null,
+    });
     defer qr.deinit();
 
     try qr.add_data("a", 0);
@@ -695,23 +697,13 @@ test "basic" {
 test "errors" {
     try tst.expectError(
         error.InvalidVersion,
-        QRCode.init(
-            tst.allocator,
-            0,
-            .H,
-            0,
-            0,
-            null,
-        ),
+        Version.init(0),
     );
+
     {
-        var qr = try QRCode.init(
+        var qr = QRCode.init(
             tst.allocator,
-            1,
-            .L,
-            10,
-            10,
-            null,
+            try .init(1),
         );
         defer qr.deinit();
         try tst.expectError(
