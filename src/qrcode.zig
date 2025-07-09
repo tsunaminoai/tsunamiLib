@@ -5,6 +5,61 @@ const tst = std.testing;
 const math = std.math;
 
 pub const ErrorCorrectionLevel = enum(u2) { L = 1, M = 0, Q = 3, H = 2 };
+pub const Version = struct {
+    value: u8,
+
+    pub fn init(v: u8) !Version {
+        const ver = Version{ .value = v };
+        try ver.check();
+        return ver;
+    }
+    pub fn check(self: Version) !void {
+        if (self.value < 1 or self.value > 40) return error.InvalidVersion;
+    }
+    pub fn mode_size(self: Version) EncodingSize {
+        return switch (self.value) {
+            1...9 => .{ .small = ModeSize.Small },
+            10...26 => .{ .medium = ModeSize.Medium },
+            else => .{ .large = ModeSize.Large },
+        };
+    }
+};
+
+pub const EncodingMode = enum(u4) {
+    number = 1 << 0,
+    alpha_num = 1 << 1,
+    byte = 1 << 2,
+    kanji = 1 << 3,
+};
+const ModeSize = struct {
+    number: u8,
+    alpha_num: u8,
+    byte: u8,
+    kanji: u8,
+    const Small = ModeSize{
+        .number = 10,
+        .alpha_num = 9,
+        .byte = 8,
+        .kanji = 8,
+    };
+    const Medium = ModeSize{
+        .number = 10,
+        .alpha_num = 9,
+        .byte = 8,
+        .kanji = 8,
+    };
+    const Large = ModeSize{
+        .number = 10,
+        .alpha_num = 9,
+        .byte = 8,
+        .kanji = 8,
+    };
+};
+const EncodingSize = union(enum) {
+    small: ModeSize,
+    medium: ModeSize,
+    large: ModeSize,
+};
 const RSBlockOffset = enum(u2) { L = 0, M = 1, Q = 2, H = 3 };
 const RSBlock = struct {
     total_count: usize,
@@ -63,12 +118,84 @@ fn rs_blocks(
     return try blocks.toOwnedSlice();
 }
 
+fn BCH_type_info(data: u16) u16 {
+    var d = data << 10;
+    while (BCH_digit(d) - BCH_digit(G15) >= 0) {
+        d ^= G15 << (BCH_digit(d) - BCH_digit(G15));
+    }
+    return ((data << 10) | d) ^ G15_MASK;
+}
+fn BCH_type_number(data: u16) u16 {
+    var d = data << 12;
+    while (BCH_digit(d) - BCH_digit(G15) >= 0) {
+        d ^= G18 << (BCH_digit(d) - BCH_digit(G18));
+    }
+}
+fn BCH_digit(data: u16) u16 {
+    var d = data;
+    var digit: u16 = 0;
+    while (d != 0) : (d >>= 1)
+        digit += 1;
+    return digit;
+}
+const Masks = struct {
+    const MaskFn = *const fn (usize, usize) bool;
+    fn @"000"(i: usize, j: usize) bool {
+        return (i + j) % 2 == 0;
+    }
+    fn @"001"(i: usize, j: usize) bool {
+        _ = j; // autofix
+        return i % 2 == 0;
+    }
+    fn @"010"(i: usize, j: usize) bool {
+        _ = i; // autofix
+        return j % 3 == 0;
+    }
+    fn @"011"(i: usize, j: usize) bool {
+        return (i + j) % 3 == 0;
+    }
+    fn @"100"(i: usize, j: usize) bool {
+        return (@divFloor(i, 2) + @divFloor(j, 3)) % 2 == 0;
+    }
+    fn @"101"(i: usize, j: usize) bool {
+        return (i + j) % 2 + (i + j) % 3 == 0;
+    }
+    fn @"110"(i: usize, j: usize) bool {
+        return ((i + j) % 2 + (i + j) % 3) % 2 == 0;
+    }
+    fn @"111"(i: usize, j: usize) bool {
+        return ((i + j) % 3 + (i + j) % 2) % 2 == 0;
+    }
+};
+
+const BitLimitTable = blk: {
+    var out: [100]u8 = 0 ** 100;
+
+    for (1..41) |version| {
+        // var sum: u8 = 8 *
+        out[version] = 0;
+    }
+    break :blk out;
+};
+
 test {
     const blocks = try rs_blocks(tst.allocator, 21, .L);
     defer tst.allocator.free(blocks);
     // std.debug.print("{any}\n", .{blocks});
 }
 
+const NumberLen = &.{
+    &.{ .bits = 3, .len = 10 },
+    &.{ .bits = 2, .len = 7 },
+    &.{ .bits = 1, .len = 4 },
+};
+
+const G15 = (1 << 10) | (1 << 8) | (1 << 5) | (1 << 4) | (1 << 2) | (1 << 1) | (1 << 0);
+const G18 = ((1 << 12) | (1 << 11) | (1 << 10) | (1 << 9) | (1 << 8) | (1 << 5) | (1 << 2) | (1 << 0));
+const G15_MASK = (1 << 14) | (1 << 12) | (1 << 10) | (1 << 4) | (1 << 1);
+
+const PAD0 = 0xEC;
+const PAD1 = 0x11;
 pub const Polynomial = struct {
     num: []u8,
     allocator: Allocator,
@@ -214,6 +341,12 @@ pub const Polynomial = struct {
     }
 };
 
+pub const QRData = struct {
+    data: []const u8,
+    mode: EncodingMode,
+    check_data: bool,
+};
+
 test "polynomial operations" {
     const allocator = std.testing.allocator;
 
@@ -229,12 +362,13 @@ test "polynomial operations" {
     defer result.deinit();
 
     // Modulo operation
-    var mod_result = try poly1.mod(poly2);
-    defer mod_result.deinit();
+    // var mod_result = try poly1.mod(poly2);
+    // defer mod_result.deinit();
 
     // Iteration
     for (result.iter()) |coeff| {
-        std.debug.print("{} ", .{coeff});
+        _ = coeff; // autofix
+        // std.debug.print("{} ", .{coeff});
     }
 }
 
@@ -432,3 +566,157 @@ const RSBlockTable = [_][]const u8{
     &.{ 34, 54, 24, 34, 55, 25 },
     &.{ 20, 45, 15, 61, 46, 16 },
 };
+
+const LUTS = struct {
+    pub const rsPoly = {
+        // for version in range(1,41):
+        //     for error_correction in range(4):
+        //         rs_blocks_list = base.rs_blocks(version, error_correction)
+        //         ecCount, rsPoly = create_bytes(rs_blocks_list)
+        //         rsPoly_LUT[ecCount]=rsPoly.num
+        // print(rsPoly_LUT)
+    };
+};
+
+const QRCode = struct {
+    version: Version,
+    error_correction: ErrorCorrectionLevel = .L,
+    box_size: usize = 100,
+    border: usize = 0,
+    mask_patern: ?Masks.MaskFn = null,
+    modules: ?void = null,
+    alloc: Allocator,
+    pub fn init(
+        a: Allocator,
+        version: u8,
+        error_correction: ErrorCorrectionLevel,
+        box_size: usize,
+        border: usize,
+        mask_patern: ?Masks.MaskFn,
+    ) !QRCode {
+        return .{
+            .alloc = a,
+            .box_size = box_size,
+            .border = border,
+            .mask_patern = mask_patern,
+            .version = try Version.init(version),
+            .error_correction = error_correction,
+        };
+    }
+    pub fn deinit(self: *QRCode) void {
+        _ = self; // autofix
+    }
+
+    pub fn clear(self: *QRCode) !void {
+        _ = self; // autofix
+    }
+    /// Output the QR Code using ASCII characters.
+    ///
+    /// :param tty: use fixed TTY color codes (forces invert=True)
+    /// :param invert: invert the ASCII characters (solid <-> transparent)
+    pub fn print_ascii(self: QRCode, tty: bool, invert: bool) !void {
+        _ = tty; // autofix
+        _ = invert; // autofix
+        _ = self; // autofix
+    }
+    /// Return the QR Code as a multidimensional array, including the border.
+    ///
+    /// To return the array without a border, set ``self.border`` to 0 first.
+    pub fn get_matrix(self: QRCode) !void {
+        _ = self; // autofix
+    }
+    ///     Compile the data into a QR Code array.
+    ///
+    /// :param fit: If ``True`` (or if a size has not been provided), find the
+    ///     best fit for the data to avoid data overflow errors.
+    pub fn make(self: *QRCode) !void {
+        _ = self; // autofix
+    }
+    ///     Add data to this QR Code.
+    ///
+    /// :param optimize: Data will be split into multiple chunks to optimize
+    ///     the QR size by finding to more compressed modes of at least this
+    ///     length. Set to ``0`` to avoid optimizing at all.
+    pub fn add_data(self: *QRCode, data: []const u8, optimize: usize) !void {
+        _ = data; // autofix
+        _ = optimize; // autofix
+        _ = self; // autofix
+    }
+    /// Find the minimum size required to fit in the data.
+    pub fn best_fit(self: *QRCode) !void {
+        _ = self; // autofix
+    }
+    /// Find the most efficient mask pattern.
+    pub fn best_mask_pattern(self: *QRCode) !void {
+        _ = self; // autofix
+    }
+
+    // setup functions
+    fn setup_position_probe_patternc(self: *QRCode) !void {
+        _ = self; // autofix
+    }
+    fn setup_timing_pattern(self: *QRCode) !void {
+        _ = self; // autofix
+    }
+    fn setup_position_adjust_pattern(self: *QRCode) !void {
+        _ = self; // autofix
+    }
+    fn setup_type_number(self: *QRCode) !void {
+        _ = self; // autofix
+    }
+    fn setup_type_info(self: *QRCode) !void {
+        _ = self; // autofix
+    }
+
+    // other functions
+    fn map_data(self: *QRCode) !void {
+        _ = self; // autofix
+    }
+    fn active_with_neighbors(self: QRCode) !void {
+        _ = self; // autofix
+    }
+};
+
+test "basic" {
+    var qr = try QRCode.init(
+        tst.allocator,
+        1,
+        .L,
+        100,
+        0,
+        null,
+    );
+    defer qr.deinit();
+
+    try qr.add_data("a", 0);
+    try qr.make();
+}
+
+test "errors" {
+    try tst.expectError(
+        error.InvalidVersion,
+        QRCode.init(
+            tst.allocator,
+            0,
+            .H,
+            0,
+            0,
+            null,
+        ),
+    );
+    {
+        var qr = try QRCode.init(
+            tst.allocator,
+            1,
+            .L,
+            10,
+            10,
+            null,
+        );
+        defer qr.deinit();
+        try tst.expectError(
+            error.DataOverflow,
+            qr.add_data("abcdefghijklmno", 40),
+        );
+    }
+}
