@@ -3,7 +3,7 @@
   "packages": [
     "zls@latest",
     "watchexec@latest",
-    "zig@0.13.0"
+    "zig@latest"
   ],
   "shell": {
     "init_hook": [
@@ -14,7 +14,7 @@
         "zig build test"
       ],
       "test-watch": [
-        "watchexec --exts zig --watch src 'clear && zig build test'"
+        "watchexec -c -- zig build test"
       ],
       "build": [
         "zig build"
