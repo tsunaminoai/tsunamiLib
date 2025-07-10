@@ -81,6 +81,8 @@ pub const NumECCBlocks = [_][]const i16{
 pub const Version = enum(u8) {
     invalid = 0,
     @"1" = 1,
+    @"2" = 2,
+    @"32" = 32,
     @"40" = 40,
     pub fn get_config(self: Version) Config {
         return switch (@intFromEnum(self)) {
@@ -89,6 +91,9 @@ pub const Version = enum(u8) {
             27...40 => .{ .bits = 156, .codewords = 20 },
             else => unreachable,
         };
+    }
+    pub fn asInt(self: Version) u8 {
+        return @intFromEnum(self);
     }
     pub const Config = struct {
         ecc: enum { L, M, Q, H, check } = .check,
@@ -150,6 +155,7 @@ pub const Module = union(enum) {
     };
     pub const Unfilled = struct {};
     pub const Function = struct {
+        kind: Kind = .separator,
         color: bool,
         pub const Kind = enum {
             finder,
@@ -284,17 +290,83 @@ pub const QRCode = struct {
         }
     }
 
+    pub fn drawTimingPatterns(self: *QRCode) void {
+        for (0..self.side_len) |i| {
+            self.modules.items[6].items[i] = .{ .function = .{ .color = @mod(i, 2) == 0 } };
+            self.modules.items[i].items[6] = .{ .function = .{ .color = @mod(i, 2) == 0 } };
+        }
+    }
+    pub fn drawFinderPatterns(self: *QRCode) void {
+        const centers = [_][]const usize{
+            &.{ 3, 3 },
+            &.{ self.side_len - 4, 3 },
+            &.{ 3, self.side_len - 4 },
+        };
+        for (centers) |c| {
+            var dy: isize = -4;
+            while (dy <= 4) : (dy += 1) {
+                var dx: isize = -4;
+                while (dx <= 4) : (dx += 1) {
+                    const dist = @max(@abs(dx), @abs(dy));
+                    const x = @as(isize, @intCast(c[0])) + dx;
+                    const y = @as(isize, @intCast(c[1])) + dy;
+                    if (0 <= x and x < self.side_len and 0 <= y and y < self.side_len) {
+                        self.modules.items[@intCast(x)].items[@intCast(y)] = .{
+                            .function = .{
+                                .kind = if (dist <= 3) .finder else .separator,
+                                .color = dist != 2 and dist != 4,
+                            },
+                        };
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn drawAlignmentPatterns(self: *QRCode) !void {
+        if (self.version == .@"1") return;
+        var positions = Array(isize).init(self.allocator);
+        defer positions.deinit();
+        try positions.append(6);
+        const numAlign = @divFloor(self.version.asInt(), 7) + 2;
+        const step: isize = if (self.version == .@"32") 26 else @intCast(try math.divCeil(usize, (self.side_len - 13), (numAlign * 2 - 2)) * 2);
+        var pos: isize = @as(isize, @intCast(self.side_len)) - 7;
+        while (positions.items.len < numAlign) : (pos -= step) {
+            //todo: splice?
+            // positions.splice(1, 0, pos);
+            try positions.appendSlice(&.{ 1, 0, pos });
+        }
+        for (positions.items, 0..) |cx, i| {
+            for (positions.items, 0..) |cy, j| {
+                if ((i == 0 and j == 0) or (i == 0 and j == numAlign - 1) or (i == numAlign - 1 and j == 0))
+                    return;
+
+                for (0..4) |d_x| {
+                    const dx: isize = 2 - @as(isize, @intCast(d_x));
+                    for (0..4) |d_y| {
+                        const dy: isize = 2 - @as(isize, @intCast(d_y));
+                        self.modules.items[@intCast(cx + dx)].items[@intCast(cy + dy)] = .{ .function = .{ .kind = .alignment, .color = @max(@abs(dx), @abs(dy)) != 1 } };
+                    }
+                }
+            }
+        }
+    }
     pub fn format(self: QRCode, comptime fmt: []const u8, options: anytype, writer: anytype) !void {
         _ = fmt; // autofix
         _ = options; // autofix
         for (self.modules.items) |row| {
             for (row.items) |cell| {
-                switch (cell) {
-                    .filled => |c| if (c.color) try writer.writeAll("."),
-                    .function => |c| if (c.color) try writer.writeAll("."),
-                    .mask => |c| if (c.color) try writer.writeAll("."),
-                    inline else => try writer.writeAll(" "),
-                }
+                try writer.writeAll(blk: switch (cell) {
+                    .filled => |c| break :blk if (c.color) "=" else "_",
+                    .function => |f| {
+                        break :blk switch (f.kind) {
+                            .separator => "_",
+                            inline else => if (f.color) "=" else "_",
+                        };
+                    },
+                    .mask => |c| break :blk if (c.color) "=" else "_",
+                    inline else => break :blk "_",
+                });
             }
             try writer.writeAll("\n");
         }
@@ -306,13 +378,17 @@ test "hello world" {
     const input = "Hello, world! 123";
     try tst.expectEqual(.byte, try analyze_unicode(input));
     const cfg = Version.@"1".get_config();
-    std.debug.print("{}\n", .{cfg});
+    _ = cfg; // autofix
+    // std.debug.print("{}\n", .{cfg});
     const expect_codewords = [_]u8{ 0x41, 0x14, 0x86, 0x56, 0xC6, 0xC6, 0xF2, 0xC2, 0x07, 0x76, 0xF7, 0x26, 0xC6, 0x42, 0x12, 0x03, 0x13, 0x23, 0x30, 0x85, 0xA9, 0x5E, 0x07, 0x0A, 0x36, 0xC9 };
     _ = expect_codewords; // autofix
 
-    var q = try QRCode.init(tst.allocator, 10, .low, .@"1");
+    var q = try QRCode.init(tst.allocator, 25, .low, .@"2");
     defer q.deinit();
-    // q.clearNewFlags();
+    q.clearNewFlags();
+    q.drawTimingPatterns();
+    q.drawFinderPatterns();
+    try q.drawAlignmentPatterns();
 
     std.debug.print("{}\n", .{q});
 }
