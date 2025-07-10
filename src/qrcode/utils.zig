@@ -425,18 +425,20 @@ pub const QRCode = struct {
     pub fn format(self: QRCode, comptime fmt: []const u8, options: anytype, writer: anytype) !void {
         _ = fmt; // autofix
         _ = options; // autofix
+        const space = "  ";
+        const block = "██";
         for (self.modules.items) |row| {
             for (row.items) |cell| {
                 try writer.writeAll(blk: switch (cell) {
-                    .filled => |c| break :blk if (c.color) "=" else "_",
+                    .filled => |c| break :blk if (c.color) block else space,
                     .function => |f| {
                         break :blk switch (f.kind) {
-                            .separator => "_",
-                            inline else => if (f.color) "=" else "_",
+                            .separator => space,
+                            inline else => if (f.color) block else space,
                         };
                     },
-                    .mask => |c| break :blk if (c.color) "=" else "_",
-                    inline else => break :blk "_",
+                    .mask => |c| break :blk if (c.color) block else space,
+                    inline else => break :blk space,
                 });
             }
             try writer.writeAll("\n");
@@ -573,20 +575,51 @@ pub const ReedSolomonGenerator = struct {
 
         try self.coeffs.append(1);
 
-        // let root = 1;
-        //     for (let i = 0; i < degree; i++) {
-        //       for (let j = 0; j < coefs.length; j++) {
-        //         coefs[j] = ReedSolomonGenerator.multiply(coefs[j], root);
-        //         if (j + 1 < coefs.length)
-        //           coefs[j] ^= coefs[j + 1];
-        //       }
-        //       root = ReedSolomonGenerator.multiply(root, 0x02);
-        //     }
+        var root: usize = 1;
+        for (0..degree) |_| {
+            for (0..self.coeffs.items.len) |j| {
+                self.coeffs.items[j] = self.multiply(self.coeffs.items[j], root);
+                if (j + 1 < self.coeffs.items.len)
+                    self.coeffs.items[j] ^= self.coeffs.items[j + 1];
+            }
+            root = self.multiply(root, 0x2);
+        }
 
         return self;
     }
     pub fn deinit(self: ReedSolomonGenerator) void {
         self.coeffs.deinit();
+    }
+
+    fn multiply(self: ReedSolomonGenerator, x: u8, y: u8) !u8 {
+        _ = self; // autofix
+        _ = x; // autofix
+        _ = y; // autofix
+
+        // if (x >>> 8 != 0 || y >>> 8 != 0)
+        //   throw new RangeError("Byte out of range");
+        // let z: int = 0;
+        // for (let i = 7; i >= 0; i--) {
+        //   z = (z << 1) ^ ((z >>> 7) * 0x11D);
+        //   z ^= ((y >>> i) & 1) * x;
+        // }
+        // if (z >>> 8 != 0)
+        //   throw new Error("Assertion error");
+        return 0;
+    }
+    pub fn getRemainder(self: *ReedSolomonGenerator, data_bytes: []const u8) ![]u8 {
+        var res = try self.coeffs.clone();
+        @memset(&res.items, 0);
+
+        for (data_bytes) |byte| {
+            const factor = byte ^ (res.orderedRemove(0));
+            try res.append(0);
+            for (self.coeffs.items, 0..) |c, i| {
+                res.items[i] ^= self.multiply(c, factor);
+            }
+        }
+
+        return try res.toOwnedSlice();
     }
 };
 
