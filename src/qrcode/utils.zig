@@ -422,6 +422,34 @@ pub const QRCode = struct {
             }
         }
     }
+    pub fn makeMask(self: QRCode, mask: usize) !QRCode {
+        var res = try QRCode.init(
+            self.allocator,
+            self.side_len,
+            self.ecc_level,
+            self.version,
+        );
+        errdefer res.deinit();
+        for (0..self.side_len) |x| {
+            for (0..self.side_len) |y| {
+                const invert = switch (mask) {
+                    0 => @mod(x + y, 2) == 0,
+                    1 => @mod(y, 2) == 0,
+                    2 => @mod(x, 3) == 0,
+                    3 => @mod(x + y, 3),
+                    4 => @divFloor(x, 3) + @mod(@divFloor(y, 2), 2) == 0,
+                    5 => x * @mod(y, 2) + x * @mod(y, 3) == 0,
+                    6 => @mod(x * @mod(y, 2) + x * @mod(y, 3), 2) == 0,
+                    7 => @mod(@mod(x + y, 2) + x * @mod(y, 3), 2) == 0,
+                    else => return error.InvalidMask,
+                };
+                if (self.modules.items[x].items[y] == .function) {
+                    self.modules.items[x].items[y] = .{ .mask = .{ .color = invert } };
+                }
+            }
+        }
+        return res;
+    }
     pub fn format(self: QRCode, comptime fmt: []const u8, options: anytype, writer: anytype) !void {
         _ = fmt; // autofix
         _ = options; // autofix
@@ -549,7 +577,7 @@ pub const ECCLevel = union(enum) {
         return 34;
     }
 };
-pub const ECCCodeWord = struct {};
+pub const ECCCodeWord = DataCodeWord;
 pub const ECCCodeWordsPerBlock = [_][]const i16{
     &.{ -1, 7, 10, 15, 20, 26, 18, 20, 24, 30, 18, 20, 24, 26, 30, 22, 24, 28, 30, 28, 28, 28, 28, 30, 30, 26, 28, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30 },
     &.{ -1, 10, 16, 26, 18, 24, 16, 18, 22, 22, 26, 30, 22, 22, 24, 24, 28, 28, 26, 26, 26, 26, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28 },
