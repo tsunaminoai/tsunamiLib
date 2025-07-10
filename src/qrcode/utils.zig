@@ -183,6 +183,29 @@ pub const QRCode = struct {
 
     allocator: Allocator,
 
+    pub fn init(a: Allocator, size: usize, ecc: ECCLevel, version: Version) !QRCode {
+        var self = QRCode{
+            .allocator = a,
+            .side_len = size,
+            .ecc_level = ecc,
+            .version = version,
+            .modules = Array(Array(Module)).init(a),
+        };
+        for (0..size) |y| {
+            try self.modules.append(Array(Module).init(a));
+            try self.modules.items[y].appendNTimes(.{ .unfilled = .{} }, size);
+        }
+
+        return self;
+    }
+
+    pub fn deinit(self: *QRCode) void {
+        for (self.modules.items) |row| {
+            row.deinit();
+        }
+        self.modules.deinit();
+    }
+
     pub fn clearNewFlags(self: *QRCode) void {
         for (self.modules.items) |*column| {
             for (column.items) |*mod| {
@@ -260,6 +283,22 @@ pub const QRCode = struct {
             self.modules.items[b].items[a] = .{ .function = .{ .color = color } };
         }
     }
+
+    pub fn format(self: QRCode, comptime fmt: []const u8, options: anytype, writer: anytype) !void {
+        _ = fmt; // autofix
+        _ = options; // autofix
+        for (self.modules.items) |row| {
+            for (row.items) |cell| {
+                switch (cell) {
+                    .filled => |c| if (c.color) try writer.writeAll("."),
+                    .function => |c| if (c.color) try writer.writeAll("."),
+                    .mask => |c| if (c.color) try writer.writeAll("."),
+                    inline else => try writer.writeAll(" "),
+                }
+            }
+            try writer.writeAll("\n");
+        }
+    }
 };
 
 // from https://www.nayuki.io/page/creating-a-qr-code-step-by-step
@@ -271,12 +310,9 @@ test "hello world" {
     const expect_codewords = [_]u8{ 0x41, 0x14, 0x86, 0x56, 0xC6, 0xC6, 0xF2, 0xC2, 0x07, 0x76, 0xF7, 0x26, 0xC6, 0x42, 0x12, 0x03, 0x13, 0x23, 0x30, 0x85, 0xA9, 0x5E, 0x07, 0x0A, 0x36, 0xC9 };
     _ = expect_codewords; // autofix
 
-    var q = QRCode{
-        .allocator = tst.allocator,
-        .ecc_level = .low,
-        .modules = Array(Array(Module)).init(tst.allocator),
-        .side_len = 10,
-        .version = .@"1",
-    };
-    q.clearNewFlags();
+    var q = try QRCode.init(tst.allocator, 10, .low, .@"1");
+    defer q.deinit();
+    // q.clearNewFlags();
+
+    std.debug.print("{}\n", .{q});
 }
