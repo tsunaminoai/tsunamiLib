@@ -11,6 +11,10 @@ pub const Mode = enum {
     byte,
     kanji,
 };
+pub const Point = struct {
+    x: usize = 0,
+    y: usize = 0,
+};
 pub const Penalty = enum(u8) {
     n1 = 3,
     n2 = 3,
@@ -19,7 +23,7 @@ pub const Penalty = enum(u8) {
     pub const Info = struct {
         horizRuns: Array(LinearRun),
         vertRuns: Array(LinearRun),
-        twoByTwoBoxes: Array(@TypeOf(.{ usize, usize })),
+        twoByTwoBoxes: Array(@TypeOf(Point)),
         horizFalseFinders: Array(LinearRun),
         vertFalseFinders: Array(LinearRun),
         numDarkModules: usize = 0,
@@ -60,7 +64,7 @@ pub const Codeword = struct {
         };
     }
 };
-
+pub const ECCCodeWord = struct {};
 pub const ECCCodeWordsPerBlock = [_][]const i16{
     &.{ -1, 7, 10, 15, 20, 26, 18, 20, 24, 30, 18, 20, 24, 26, 30, 22, 24, 28, 30, 28, 28, 28, 28, 30, 30, 26, 28, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30 },
     &.{ -1, 10, 16, 26, 18, 24, 16, 18, 22, 22, 26, 30, 22, 22, 24, 24, 28, 28, 26, 26, 26, 26, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28 },
@@ -91,6 +95,16 @@ pub const Version = enum(u8) {
         bits: usize,
         codewords: usize,
     };
+    pub fn getNumRawDataModules(self: Version) usize {
+        const i: u8 = @intFromEnum(self);
+        var res: usize = (16 * i + 128) * i + 64;
+        if (i >= 2) {
+            const numAlign = @divFloor(i, 7) + 2;
+            res -= (25 * numAlign - 10) * numAlign - 55;
+            if (i >= 7) res -= 36;
+        }
+        return res;
+    }
 };
 
 pub fn analyze_unicode(input: []const u8) !Mode {
@@ -132,9 +146,11 @@ pub const Module = union(enum) {
 
     pub const Filled = struct {
         is_new: bool,
+        color: bool,
     };
     pub const Unfilled = struct {};
     pub const Function = struct {
+        color: bool,
         pub const Kind = enum {
             finder,
             separator,
@@ -147,8 +163,17 @@ pub const Module = union(enum) {
     };
     pub const CodeWord = struct {};
     pub const Remainder = struct {};
-    pub const Mask = struct {};
+    pub const Mask = struct {
+        color: bool,
+    };
 };
+
+inline fn getBit(x: anytype, i: usize) u1 {
+    return ((x >> i) & 1);
+}
+test {
+    try tst.expectEqual(1, getBit(0b00100, 2));
+}
 
 pub const QRCode = struct {
     side_len: usize,
@@ -159,9 +184,9 @@ pub const QRCode = struct {
     allocator: Allocator,
 
     pub fn clearNewFlags(self: *QRCode) void {
-        for (self.modules.items) |column| {
-            for (column.items) |mod| {
-                switch (mod) {
+        for (self.modules.items) |*column| {
+            for (column.items) |*mod| {
+                switch (mod.*) {
                     .filled => |*f| f.is_new = false,
                     else => continue,
                 }
@@ -169,8 +194,8 @@ pub const QRCode = struct {
         }
     }
 
-    pub fn makeZigZagScan(self: QRCode) ![]@TypeOf(.{ usize, usize }) {
-        var res = Array(@TypeOf(.{ usize, usize })).init(self.allocator);
+    pub fn makeZigZagScan(self: QRCode) ![]Point {
+        var res = Array(Point).init(self.allocator);
         defer res.deinit();
         var right: isize = self.side_len;
         while (right >= 1) : (right -= 2) {
@@ -188,6 +213,53 @@ pub const QRCode = struct {
         }
         return try res.toOwnedSlice();
     }
+    pub fn applyMask(self: *QRCode, mask: QRCode) !void {
+        for (0..self.side_len) |x| {
+            for (0..self.side_len) |y| {
+                const a = mask.modules.items[x].items[y];
+                const b = self.modules.items[x].items[y];
+                if (a == .mask and b == .filled)
+                    b.color = b.color != a.color;
+            }
+        }
+    }
+    pub fn drawCodewords(self: QRCode, codewords: []const Codeword, zig_zag: []const Point) !void {
+        if (codewords.len != @divFloor(self.version.getNumRawDataModules(), 8)) {
+            return error.InvalidArgument;
+        }
+        for (zig_zag, 0..) |z, i| {
+            if (i < codewords.len * 8) {
+                const cw = codewords[i >> 3];
+                self.modules.items[z.x].items[z.y] = .{
+                    .code_word = .init(getBit(cw.value, 7 - (i & 7))),
+                };
+            } else self.modules.items[z.x].items[z.y] = .{ .remainder = .{} };
+        }
+    }
+    pub fn interleaveBlocks(self: QRCode, blocks: []const []const Codeword) ![]ECCCodeWord {
+        const block_len = ECCCodeWordsPerBlock[@intFromEnum(self.ecc_level)][@intFromEnum(self.version)];
+        _ = block_len; // autofix
+        const short_len = blocks[0].len;
+        _ = short_len; // autofix
+    }
+    pub fn drawVersionInfo(self: *QRCode) !void {
+        if (@intFromEnum(self.version) < 7) return;
+
+        var rem: usize = @intFromEnum(self.version);
+        for (0..12) |_| {
+            rem = (rem << 1) ^ ((rem) >> 11) * 0x1F25;
+        }
+        const bits = @intFromEnum(self.version) << 12 | rem;
+        if (bits >> 18 != 0) return error.WrongBits;
+
+        for (0..18) |i| {
+            const color = getBit(bits, i);
+            const a = self.side_len - 11 + @mod(i, 3);
+            const b = @divFloor(i, 3);
+            self.modules.items[a].items[b] = .{ .function = .{ .color = color } };
+            self.modules.items[b].items[a] = .{ .function = .{ .color = color } };
+        }
+    }
 };
 
 // from https://www.nayuki.io/page/creating-a-qr-code-step-by-step
@@ -198,4 +270,13 @@ test "hello world" {
     std.debug.print("{}\n", .{cfg});
     const expect_codewords = [_]u8{ 0x41, 0x14, 0x86, 0x56, 0xC6, 0xC6, 0xF2, 0xC2, 0x07, 0x76, 0xF7, 0x26, 0xC6, 0x42, 0x12, 0x03, 0x13, 0x23, 0x30, 0x85, 0xA9, 0x5E, 0x07, 0x0A, 0x36, 0xC9 };
     _ = expect_codewords; // autofix
+
+    var q = QRCode{
+        .allocator = tst.allocator,
+        .ecc_level = .low,
+        .modules = Array(Array(Module)).init(tst.allocator),
+        .side_len = 10,
+        .version = .@"1",
+    };
+    q.clearNewFlags();
 }
