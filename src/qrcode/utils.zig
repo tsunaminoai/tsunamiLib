@@ -33,11 +33,14 @@ pub const LinearRun = struct {
 
 pub const Segment = struct {
     mode: Mode, // The segment mode is always a 4-bit field.
-    count: u8 = 0, // The character count’s field width depends on the mode and version.
-    data: ?[]u8 = null,
+    count: u8, // The character count’s field width depends on the mode and version.
+    numChars: usize, // nuumber of characters encoded in the bitfield
+    data: []const u1,
     terminator: u4 = 0, // The terminator is normally four “0” bits, but fewer if the data codeword capacity is reached.
+    version: Version,
     //The bit padding is between zero to seven “0” bits, to fill all unused bits in the last byte.
     // The byte padding consists of alternating (hexadecimal) EC and 11 until the capacity is reached.
+
     pub const Mode = enum(u4) {
         number = 0x1,
         alpha = 0x2,
@@ -101,25 +104,37 @@ pub const Segment = struct {
             return 0 != (p >> @intCast(trunc & @as(u3, 3))) & @as(u3, 1);
         }
     };
-    pub fn init(a: Allocator, m: Mode, ver: Version, d: []const u8) !Segment {
-        _ = a; // autofix
-        _ = ver; // autofix
-        _ = d; // autofix
+    pub fn init(m: Mode, ver: Version, bit_data: []const u1, num_chars: usize) !Segment {
+        if (num_chars == 0) return error.InvalidNumberofChars;
         const s = Segment{
             .mode = m,
-            // .count = ver.get_config().
+            .numChars = num_chars,
+            .data = bit_data,
+            .version = ver,
+            .count = @intCast(ver.get_config().bits),
         };
         return s;
+    }
+    fn getTotalBits(segments: []const Segment, ver: Version) ?usize {
+        var res: usize = 0;
+        for (segments) |seg| {
+            const ccbits = seg.mode.numCharCountBits(ver);
+            if (seg.numChars >= (@as(usize, 1) << @intCast(ccbits)))
+                return null;
+            res += 4 + ccbits + (if (seg.data) |d| d.len else 0);
+        }
+        return res;
     }
 };
 test "Segments" {
     const input = Tests.hello_world;
+    _ = input; // autofix
     try tst.expectEqual(.byte, try Segment.Mode.analyze_unicode(Tests.hello_world));
     try tst.expectEqual(.kanji, Segment.Mode.analyze_unicode(Tests.kanji));
     try tst.expectEqual(.number, try Segment.Mode.analyze_unicode(Tests.numeric));
     try tst.expectEqual(.byte, try Segment.Mode.analyze_unicode(Tests.utf8));
     try tst.expectEqual(.alpha, try Segment.Mode.analyze_unicode(Tests.alpha));
-    const s = try Segment.init(tst.allocator, .byte, .@"2", input);
+    const s = try Segment.init(.byte, .@"2", &[_]u1{ 1, 0, 1, 0, 1 }, 1);
     _ = s; // autofix
     // try tst.expectEqual(1, s.count);
 }
