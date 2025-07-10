@@ -18,7 +18,7 @@ pub fn build(b: *std.Build) void {
     _ = b.addModule("termsize", .{
         .root_source_file = b.path("src/termsize.zig"),
     });
-
+    const zg = b.dependency("zg", .{});
     const lib = b.addStaticLibrary(.{
         .name = "tsunamiLib",
         // In this case the main source file is merely a path, however, in more
@@ -27,7 +27,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-
+    lib.root_module.addImport("code_point", zg.module("code_point"));
     // This declares intent for the library to be installed into the standard
     // location when the user invokes the "install" step (the default step when
     // running `zig build`).
@@ -85,6 +85,8 @@ pub fn build(b: *std.Build) void {
         .test_runner = null,
         //todo: .test_runner = "zig test", or something
     });
+    unit_tests.root_module.addImport("code_point", zg.module("code_point"));
+
     const run_unit_tests = b.addRunArtifact(unit_tests);
 
     const run_termsize_unit_tests = b.addRunArtifact(termsize_unit_tests);
