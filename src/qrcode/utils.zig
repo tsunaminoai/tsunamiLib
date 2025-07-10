@@ -429,7 +429,7 @@ pub const QRCode = struct {
         const block = "██";
         for (self.modules.items) |row| {
             for (row.items) |cell| {
-                try writer.writeAll(blk: switch (cell) {
+                const out = blk: switch (cell) {
                     .filled => |c| break :blk if (c.color) block else space,
                     .function => |f| {
                         break :blk switch (f.kind) {
@@ -439,7 +439,8 @@ pub const QRCode = struct {
                     },
                     .mask => |c| break :blk if (c.color) block else space,
                     inline else => break :blk space,
-                });
+                };
+                try writer.writeAll(out);
             }
             try writer.writeAll("\n");
         }
@@ -593,19 +594,16 @@ pub const ReedSolomonGenerator = struct {
 
     fn multiply(self: ReedSolomonGenerator, x: u8, y: u8) !u8 {
         _ = self; // autofix
-        _ = x; // autofix
-        _ = y; // autofix
+        if (x >> 8 != 0 or y >> 8 != 0) return error.ByteOutOfRange;
 
-        // if (x >>> 8 != 0 || y >>> 8 != 0)
-        //   throw new RangeError("Byte out of range");
-        // let z: int = 0;
-        // for (let i = 7; i >= 0; i--) {
-        //   z = (z << 1) ^ ((z >>> 7) * 0x11D);
-        //   z ^= ((y >>> i) & 1) * x;
-        // }
-        // if (z >>> 8 != 0)
-        //   throw new Error("Assertion error");
-        return 0;
+        var z: u8 = 0;
+        var i: isize = 7;
+        while (i >= 0) : (i -= 1) {
+            z = (z << 1) ^ ((z >> 7) * 0x11D);
+            z ^= ((y >> i) & 1) * x;
+        }
+        if (z >> 8 != 0) return error.GotZero;
+        return z;
     }
     pub fn getRemainder(self: *ReedSolomonGenerator, data_bytes: []const u8) ![]u8 {
         var res = try self.coeffs.clone();
