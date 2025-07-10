@@ -569,16 +569,24 @@ pub const LinearRun = struct {
     startX: usize = 0,
     startY: usize = 0,
     runLen: usize = 0,
+    pub fn init(x: usize, y: usize, len: usize) LinearRun {
+        return .{
+            .startX = x,
+            .startY = y,
+            .runLen = len,
+        };
+    }
 };
 pub const FinderPenalty = struct {
     runHistory: Array(usize),
     runEndPositions: Array(usize),
     position: usize = 0,
-    padding: ?usize = null,
+    padding: usize,
     direction: Dir,
+    qr_size: usize,
 
     outer: usize,
-    finders: []const LinearRun,
+    finders: Array(LinearRun),
 
     const Dir = enum { horiz, vert };
 
@@ -587,7 +595,7 @@ pub const FinderPenalty = struct {
         qr_size: usize,
         dir: Dir,
         outer_position: usize,
-        finders: []const LinearRun,
+        finders: Array(LinearRun),
     ) FinderPenalty {
         return .{
             .runHistory = Array(usize).init(a),
@@ -596,6 +604,54 @@ pub const FinderPenalty = struct {
             .padding = qr_size,
             .finders = finders,
             .direction = dir,
+            .qr_size = qr_size,
         };
+    }
+    pub fn deinit(self: FinderPenalty) void {
+        self.runEndPositions.deinit();
+        self.runHistory.deinit();
+    }
+
+    pub fn addHistory(self: *FinderPenalty, current_run_len: usize) !void {
+        try self.runHistory.insert(0, current_run_len + self.padding);
+        self.padding = 0;
+        self.position += current_run_len;
+        try self.runEndPositions.insert(0, self.position);
+    }
+    pub fn countAndAddPatterns(self: *FinderPenalty) !usize {
+        const hist = self.runHistory.items;
+        const n = hist[1];
+        if (n > self.qr_size * 3) return error.WrongSize;
+
+        const core = n > 0 and hist[2] == n and hist[3] == n * 3 and hist[4] == n and hist[5] == n;
+        const core_start = self.runEndPositions.items[6];
+        const core_end = self.runEndPositions[1];
+
+        var res: usize = 0;
+        if (core and hist[0] >= n * 4 and hist[6] >= n) {
+            res += 1;
+            const start = core_start - n;
+            const end = core_end + n * 4;
+            try self.finders.append(if (self.direction == .horiz)
+                .init(start, self.outer, end - start)
+            else
+                .init(self.outer, start, end - start));
+        }
+        return res;
+    }
+    pub fn terminateAndCount(
+        self: *FinderPenalty,
+        current_run_color: bool,
+        current_run_len: usize,
+    ) usize {
+        var cur_run = current_run_len;
+        if (current_run_color) {
+            try self.addHistory(current_run_len);
+            cur_run = 0;
+        }
+        self.padding = self.qr_size;
+        try self.addHistory(cur_run);
+        if (self.position != self.qr_size) return error.OutOfBounds;
+        return try self.countAndAddPatterns();
     }
 };
