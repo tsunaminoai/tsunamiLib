@@ -292,8 +292,8 @@ pub const QRCode = struct {
 
     pub fn drawTimingPatterns(self: *QRCode) void {
         for (0..self.side_len) |i| {
-            self.modules.items[6].items[i] = .{ .function = .{ .color = @mod(i, 2) == 0 } };
-            self.modules.items[i].items[6] = .{ .function = .{ .color = @mod(i, 2) == 0 } };
+            self.modules.items[6].items[i] = .{ .function = .{ .kind = .timing, .color = @mod(i, 2) == 0 } };
+            self.modules.items[i].items[6] = .{ .function = .{ .kind = .timing, .color = @mod(i, 2) == 0 } };
         }
     }
     pub fn drawFinderPatterns(self: *QRCode) void {
@@ -386,9 +386,9 @@ test "hello world" {
     var q = try QRCode.init(tst.allocator, 25, .low, .@"2");
     defer q.deinit();
     q.clearNewFlags();
+    try q.drawAlignmentPatterns();
     q.drawTimingPatterns();
     q.drawFinderPatterns();
-    try q.drawAlignmentPatterns();
 
     std.debug.print("{}\n", .{q});
 }
