@@ -5,12 +5,7 @@ const tst = std.testing;
 const math = std.math;
 const code_point = @import("code_point");
 const ascii = std.ascii;
-pub const Mode = enum {
-    number,
-    alpha,
-    byte,
-    kanji,
-};
+
 pub const Point = struct {
     x: usize = 0,
     y: usize = 0,
@@ -36,20 +31,45 @@ pub const LinearRun = struct {
     runLen: usize = 0,
 };
 
-pub const Segment = extern struct {
-    mode: u4, // The segment mode is always a 4-bit field.
-    count: u8, // The character count’s field width depends on the mode and version.
-    data: [17]u8,
+pub const Segment = struct {
+    mode: Mode, // The segment mode is always a 4-bit field.
+    count: u8 = 0, // The character count’s field width depends on the mode and version.
+    data: ?[]u8 = null,
     terminator: u4 = 0, // The terminator is normally four “0” bits, but fewer if the data codeword capacity is reached.
     //The bit padding is between zero to seven “0” bits, to fill all unused bits in the last byte.
     // The byte padding consists of alternating (hexadecimal) EC and 11 until the capacity is reached.
+    pub const Mode = enum(u4) {
+        number,
+        alpha,
+        byte,
+        kanji,
+    };
+    pub fn init(a: Allocator, m: Mode, ver: Version, d: []const u8) !Segment {
+        _ = a; // autofix
+        _ = ver; // autofix
+        _ = d; // autofix
+        const s = Segment{
+            .mode = m,
+            // .count = ver.get_config().
+        };
+        return s;
+    }
 };
+test {
+    const s = try Segment.init(tst.allocator, .byte, .@"2", "Hello World! 123");
+    _ = s; // autofix
+}
+
 pub const Block = struct {};
 pub const ECCLevel = union(enum) {
     low,
     med,
     qrt,
     hi,
+    pub fn getFormatBits(self: ECCLevel) usize {
+        _ = self; // autofix
+        return 34;
+    }
 };
 pub const Codeword = struct {
     value: u8,
@@ -96,12 +116,12 @@ pub const Version = enum(u8) {
         return @intFromEnum(self);
     }
     pub const Config = struct {
-        ecc: enum { L, M, Q, H, check } = .check,
-        bits: usize,
-        codewords: usize,
+        ecc: enum { L, M, Q, H } = .L,
+        bits: usize = 0,
+        codewords: usize = 0,
     };
     pub fn getNumRawDataModules(self: Version) usize {
-        const i: u8 = @intFromEnum(self);
+        const i: usize = @intCast(self.asInt());
         var res: usize = (16 * i + 128) * i + 64;
         if (i >= 2) {
             const numAlign = @divFloor(i, 7) + 2;
@@ -110,9 +130,15 @@ pub const Version = enum(u8) {
         }
         return res;
     }
+    pub fn getNumDataCodewords(self: Version) usize {
+        const cfg = self.get_config();
+        return @intCast(@as(isize, @intCast(@divFloor(self.getNumRawDataModules(), 8))) -
+            ECCCodeWordsPerBlock[@intFromEnum(cfg.ecc)][@intCast(self.asInt())] *
+                NumECCBlocks[@intFromEnum(cfg.ecc)][@intCast(self.asInt())]);
+    }
 };
 
-pub fn analyze_unicode(input: []const u8) !Mode {
+pub fn analyze_unicode(input: []const u8) !Segment.Mode {
     var tests = packed struct(u4) {
         is_num: bool = false,
         is_alpha: bool = false,
@@ -175,7 +201,7 @@ pub const Module = union(enum) {
 };
 
 inline fn getBit(x: anytype, i: usize) u1 {
-    return ((x >> i) & 1);
+    return @intCast((x >> @intCast(i)) & 1);
 }
 test {
     try tst.expectEqual(1, getBit(0b00100, 2));
@@ -278,15 +304,15 @@ pub const QRCode = struct {
         for (0..12) |_| {
             rem = (rem << 1) ^ ((rem) >> 11) * 0x1F25;
         }
-        const bits = @intFromEnum(self.version) << 12 | rem;
+        const bits: usize = @as(usize, @intCast(self.version.asInt())) << 12 | rem;
         if (bits >> 18 != 0) return error.WrongBits;
 
         for (0..18) |i| {
-            const color = getBit(bits, i);
+            const color = getBit(bits, i) == 1;
             const a = self.side_len - 11 + @mod(i, 3);
             const b = @divFloor(i, 3);
-            self.modules.items[a].items[b] = .{ .function = .{ .color = color } };
-            self.modules.items[b].items[a] = .{ .function = .{ .color = color } };
+            self.modules.items[a].items[b] = .{ .function = .{ .kind = .version_info, .color = color } };
+            self.modules.items[b].items[a] = .{ .function = .{ .kind = .version_info, .color = color } };
         }
     }
 
@@ -323,6 +349,23 @@ pub const QRCode = struct {
         }
     }
 
+    pub fn drawFormatbits(self: *QRCode, mask: anytype) !void {
+        var bits: usize = 0;
+        if (mask != -1) {
+            const data = self.ecc_level.getFormatBits() << 3 | mask;
+            var rem = data;
+            for (0..10) |_|
+                rem = (rem << 1) ^ ((rem >> 9) * 0x0537);
+
+            bits = (data << 10 | rem) ^ 0x5412;
+        }
+        if (bits >> 15 != 0) return error.Assertion;
+        for (0..5) |i|
+            self.setFmtInfoModule(8, i, getBit(bits, i) == 1);
+    }
+    fn setFmtInfoModule(self: *QRCode, x: usize, y: usize, color: bool) void {
+        self.modules.items[x].items[y] = .{ .function = .{ .kind = .format_info, .color = color } };
+    }
     pub fn drawAlignmentPatterns(self: *QRCode) !void {
         if (self.version == .@"1") return;
         var positions = Array(isize).init(self.allocator);
@@ -381,11 +424,14 @@ pub const QRCode = struct {
 };
 
 // from https://www.nayuki.io/page/creating-a-qr-code-step-by-step
+const Tests = .{
+    .hello_world = "Hello, world! 123",
+};
 test "hello world" {
-    const input = "Hello, world! 123";
+    const input = Tests.hello_world;
     try tst.expectEqual(.byte, try analyze_unicode(input));
-    const cfg = Version.@"1".get_config();
-    _ = cfg; // autofix
+    const v2 = Version.@"2";
+    try tst.expectEqual(34, v2.getNumDataCodewords());
     // std.debug.print("{}\n", .{cfg});
     const expect_codewords = [_]u8{ 0x41, 0x14, 0x86, 0x56, 0xC6, 0xC6, 0xF2, 0xC2, 0x07, 0x76, 0xF7, 0x26, 0xC6, 0x42, 0x12, 0x03, 0x13, 0x23, 0x30, 0x85, 0xA9, 0x5E, 0x07, 0x0A, 0x36, 0xC9 };
     _ = expect_codewords; // autofix
@@ -396,6 +442,8 @@ test "hello world" {
     q.drawTimingPatterns();
     q.drawFinderPatterns();
     try q.drawAlignmentPatterns();
+    try q.drawVersionInfo();
+    // try q.drawFormatbits(2);
 
     std.debug.print("{}\n", .{q});
 }
