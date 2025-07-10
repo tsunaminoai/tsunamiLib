@@ -10,6 +10,47 @@ pub const Point = struct {
     x: usize = 0,
     y: usize = 0,
 };
+
+pub const Version = enum(u8) {
+    invalid = 0,
+    @"1" = 1,
+    @"2" = 2,
+    @"32" = 32,
+    @"40" = 40,
+    pub fn get_config(self: Version) Config {
+        return switch (@intFromEnum(self)) {
+            1...9 => .{ .bits = 148, .codewords = 20 },
+            10...26 => .{ .bits = 156, .codewords = 20 },
+            27...40 => .{ .bits = 156, .codewords = 20 },
+            else => unreachable,
+        };
+    }
+    pub fn asInt(self: Version) u8 {
+        return @intFromEnum(self);
+    }
+    pub const Config = struct {
+        ecc: enum { L, M, Q, H } = .L,
+        bits: usize = 0,
+        codewords: usize = 0,
+    };
+    pub fn getNumRawDataModules(self: Version) usize {
+        const i: usize = @intCast(self.asInt());
+        var res: usize = (16 * i + 128) * i + 64;
+        if (i >= 2) {
+            const numAlign = @divFloor(i, 7) + 2;
+            res -= (25 * numAlign - 10) * numAlign - 55;
+            if (i >= 7) res -= 36;
+        }
+        return res;
+    }
+    pub fn getNumDataCodewords(self: Version) usize {
+        const cfg = self.get_config();
+        return @intCast(@as(isize, @intCast(@divFloor(self.getNumRawDataModules(), 8))) -
+            ECCCodeWordsPerBlock[@intFromEnum(cfg.ecc)][@intCast(self.asInt())] *
+                NumECCBlocks[@intFromEnum(cfg.ecc)][@intCast(self.asInt())]);
+    }
+};
+
 pub const Penalty = enum(u8) {
     n1 = 3,
     n2 = 3,
@@ -177,59 +218,27 @@ pub const NumECCBlocks = [_][]const i16{
     &.{ -1, 1, 1, 2, 4, 4, 4, 5, 6, 8, 8, 11, 11, 16, 16, 18, 16, 19, 21, 25, 25, 25, 34, 30, 32, 35, 37, 40, 42, 45, 48, 51, 54, 57, 60, 63, 66, 70, 74, 77, 81 },
 };
 
-pub const Version = enum(u8) {
-    invalid = 0,
-    @"1" = 1,
-    @"2" = 2,
-    @"32" = 32,
-    @"40" = 40,
-    pub fn get_config(self: Version) Config {
-        return switch (@intFromEnum(self)) {
-            1...9 => .{ .bits = 148, .codewords = 20 },
-            10...26 => .{ .bits = 156, .codewords = 20 },
-            27...40 => .{ .bits = 156, .codewords = 20 },
-            else => unreachable,
-        };
-    }
-    pub fn asInt(self: Version) u8 {
-        return @intFromEnum(self);
-    }
-    pub const Config = struct {
-        ecc: enum { L, M, Q, H } = .L,
-        bits: usize = 0,
-        codewords: usize = 0,
-    };
-    pub fn getNumRawDataModules(self: Version) usize {
-        const i: usize = @intCast(self.asInt());
-        var res: usize = (16 * i + 128) * i + 64;
-        if (i >= 2) {
-            const numAlign = @divFloor(i, 7) + 2;
-            res -= (25 * numAlign - 10) * numAlign - 55;
-            if (i >= 7) res -= 36;
-        }
-        return res;
-    }
-    pub fn getNumDataCodewords(self: Version) usize {
-        const cfg = self.get_config();
-        return @intCast(@as(isize, @intCast(@divFloor(self.getNumRawDataModules(), 8))) -
-            ECCCodeWordsPerBlock[@intFromEnum(cfg.ecc)][@intCast(self.asInt())] *
-                NumECCBlocks[@intFromEnum(cfg.ecc)][@intCast(self.asInt())]);
-    }
-};
-
 pub const Module = union(enum) {
-    unfilled: Unfilled,
+    unfilled: Base,
     function: Function,
     code_word: CodeWord,
-    remainder: Remainder,
+    remainder: Base,
     mask: Mask,
     filled: Filled,
+
+    pub const Base = struct {
+        color: bool = false,
+    };
+    pub const Unfilled = Base{};
+    pub const CodeWord = Base;
+    pub const Remainder = Base{ .color = false };
+    pub const Mask = Base;
 
     pub const Filled = struct {
         is_new: bool,
         color: bool,
     };
-    pub const Unfilled = struct {};
+
     pub const Function = struct {
         kind: Kind = .separator,
         color: bool,
@@ -242,11 +251,6 @@ pub const Module = union(enum) {
             version_info,
             dark,
         };
-    };
-    pub const CodeWord = struct {};
-    pub const Remainder = struct {};
-    pub const Mask = struct {
-        color: bool,
     };
 };
 
