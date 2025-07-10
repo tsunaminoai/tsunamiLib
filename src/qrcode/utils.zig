@@ -163,15 +163,25 @@ pub const Block = struct {};
 
 pub const Codeword = struct {
     value: u8,
-    // preInterleaveIndex
-    // blockIndex
-    // indexInBlock
-    // postInterleaveIndex
+
+    preInterleaveIndex: isize = -1,
+    blockIndex: isize = -1,
+    indexInBlock: isize = -1,
+    postInterleaveIndex: isize = -1,
+
     pub fn init(v: u8) !Codeword {
-        if (v > 255) return error.InvalidValue;
+        if (v < 0 or v > 255) return error.InvalidValue;
         return .{
             .value = v,
         };
+    }
+};
+const DataCodeWord = struct {
+    preEccIndex: isize = -1,
+    cw: Codeword,
+
+    pub fn init(value: u8) !DataCodeWord {
+        return .{ .cw = try .init(value) };
     }
 };
 
@@ -548,6 +558,36 @@ pub const NumECCBlocks = [_][]const i16{
     &.{ -1, 1, 1, 1, 2, 2, 4, 4, 4, 5, 5, 5, 8, 9, 9, 10, 10, 11, 13, 14, 16, 17, 17, 18, 20, 21, 23, 25, 26, 28, 29, 31, 33, 35, 37, 38, 40, 43, 45, 47, 49 },
     &.{ -1, 1, 1, 2, 2, 4, 4, 6, 6, 8, 8, 8, 10, 12, 16, 12, 17, 16, 18, 21, 20, 23, 23, 25, 27, 29, 34, 34, 35, 38, 40, 43, 45, 48, 51, 53, 56, 59, 62, 65, 68 },
     &.{ -1, 1, 1, 2, 4, 4, 4, 5, 6, 8, 8, 11, 11, 16, 16, 18, 16, 19, 21, 25, 25, 25, 34, 30, 32, 35, 37, 40, 42, 45, 48, 51, 54, 57, 60, 63, 66, 70, 74, 77, 81 },
+};
+pub const ReedSolomonGenerator = struct {
+    coeffs: Array(u8),
+    allocator: Allocator,
+    pub fn init(a: Allocator, degree: usize) ReedSolomonGenerator {
+        if (degree < 1 or degree > 255) return error.DegreeOutOfRange;
+        var self = ReedSolomonGenerator{
+            .coeffs = Array(u8).init(a),
+            .allocator = a,
+        };
+        for (0..degree - 1) |_|
+            try self.coeffs.append(0);
+
+        try self.coeffs.append(1);
+
+        // let root = 1;
+        //     for (let i = 0; i < degree; i++) {
+        //       for (let j = 0; j < coefs.length; j++) {
+        //         coefs[j] = ReedSolomonGenerator.multiply(coefs[j], root);
+        //         if (j + 1 < coefs.length)
+        //           coefs[j] ^= coefs[j + 1];
+        //       }
+        //       root = ReedSolomonGenerator.multiply(root, 0x02);
+        //     }
+
+        return self;
+    }
+    pub fn deinit(self: ReedSolomonGenerator) void {
+        self.coeffs.deinit();
+    }
 };
 
 pub const Penalty = enum(u8) {
