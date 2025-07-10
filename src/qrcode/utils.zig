@@ -329,7 +329,14 @@ pub const QRCode = struct {
         defer positions.deinit();
         try positions.append(6);
         const numAlign = @divFloor(self.version.asInt(), 7) + 2;
-        const step: isize = if (self.version == .@"32") 26 else @intCast(try math.divCeil(usize, (self.side_len - 13), (numAlign * 2 - 2)) * 2);
+        const step: isize = if (self.version == .@"32")
+            26
+        else
+            @intCast(try math.divCeil(
+                usize,
+                self.side_len - 13,
+                numAlign * 2 - 2,
+            ) * 2);
         var pos: isize = @as(isize, @intCast(self.side_len)) - 7;
         while (positions.items.len < numAlign) : (pos -= step) {
             //todo: splice?
@@ -386,9 +393,9 @@ test "hello world" {
     var q = try QRCode.init(tst.allocator, 25, .low, .@"2");
     defer q.deinit();
     q.clearNewFlags();
-    try q.drawAlignmentPatterns();
     q.drawTimingPatterns();
     q.drawFinderPatterns();
+    try q.drawAlignmentPatterns();
 
     std.debug.print("{}\n", .{q});
 }
