@@ -51,27 +51,6 @@ pub const Version = enum(u8) {
     }
 };
 
-pub const Penalty = enum(u8) {
-    n1 = 3,
-    n2 = 3,
-    n3 = 40,
-    n4 = 10,
-    pub const Info = struct {
-        horizRuns: Array(LinearRun),
-        vertRuns: Array(LinearRun),
-        twoByTwoBoxes: Array(@TypeOf(Point)),
-        horizFalseFinders: Array(LinearRun),
-        vertFalseFinders: Array(LinearRun),
-        numDarkModules: usize = 0,
-        penaltyPoints: Array(@TypeOf(.{ usize, usize, usize, usize })),
-    };
-};
-pub const LinearRun = struct {
-    startX: usize = 0,
-    startY: usize = 0,
-    runLen: usize = 0,
-};
-
 pub const Segment = struct {
     mode: Mode, // The segment mode is always a 4-bit field.
     count: u8, // The character count’s field width depends on the mode and version.
@@ -181,16 +160,7 @@ test "Segments" {
 }
 
 pub const Block = struct {};
-pub const ECCLevel = union(enum) {
-    low,
-    med,
-    qrt,
-    hi,
-    pub fn getFormatBits(self: ECCLevel) usize {
-        _ = self; // autofix
-        return 34;
-    }
-};
+
 pub const Codeword = struct {
     value: u8,
     // preInterleaveIndex
@@ -203,19 +173,6 @@ pub const Codeword = struct {
             .value = v,
         };
     }
-};
-pub const ECCCodeWord = struct {};
-pub const ECCCodeWordsPerBlock = [_][]const i16{
-    &.{ -1, 7, 10, 15, 20, 26, 18, 20, 24, 30, 18, 20, 24, 26, 30, 22, 24, 28, 30, 28, 28, 28, 28, 30, 30, 26, 28, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30 },
-    &.{ -1, 10, 16, 26, 18, 24, 16, 18, 22, 22, 26, 30, 22, 22, 24, 24, 28, 28, 26, 26, 26, 26, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28 },
-    &.{ -1, 13, 22, 18, 26, 18, 24, 18, 22, 20, 24, 28, 26, 24, 20, 30, 24, 28, 28, 26, 30, 28, 30, 30, 30, 30, 28, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30 },
-    &.{ -1, 17, 28, 22, 16, 22, 28, 26, 26, 24, 28, 24, 28, 22, 24, 24, 30, 28, 28, 26, 28, 30, 24, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30 },
-};
-pub const NumECCBlocks = [_][]const i16{
-    &.{ -1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 4, 4, 4, 4, 4, 6, 6, 6, 6, 7, 8, 8, 9, 9, 10, 12, 12, 12, 13, 14, 15, 16, 17, 18, 19, 19, 20, 21, 22, 24, 25 },
-    &.{ -1, 1, 1, 1, 2, 2, 4, 4, 4, 5, 5, 5, 8, 9, 9, 10, 10, 11, 13, 14, 16, 17, 17, 18, 20, 21, 23, 25, 26, 28, 29, 31, 33, 35, 37, 38, 40, 43, 45, 47, 49 },
-    &.{ -1, 1, 1, 2, 2, 4, 4, 6, 6, 8, 8, 8, 10, 12, 16, 12, 17, 16, 18, 21, 20, 23, 23, 25, 27, 29, 34, 34, 35, 38, 40, 43, 45, 48, 51, 53, 56, 59, 62, 65, 68 },
-    &.{ -1, 1, 1, 2, 4, 4, 4, 5, 6, 8, 8, 11, 11, 16, 16, 18, 16, 19, 21, 25, 25, 25, 34, 30, 32, 35, 37, 40, 42, 45, 48, 51, 54, 57, 60, 63, 66, 70, 74, 77, 81 },
 };
 
 pub const Module = union(enum) {
@@ -568,6 +525,77 @@ const KanjiSet = "0000000000000000000000010000000000000000C811350000000800000008
 comptime {
     std.debug.assert(KanjiSet.len == 16384);
 }
-// test "kanjis" {
-//     std.debug.print("{}\n", .{KanjiSet.len});
-// }
+
+pub const ECCLevel = union(enum) {
+    low,
+    med,
+    qrt,
+    hi,
+    pub fn getFormatBits(self: ECCLevel) usize {
+        _ = self; // autofix
+        return 34;
+    }
+};
+pub const ECCCodeWord = struct {};
+pub const ECCCodeWordsPerBlock = [_][]const i16{
+    &.{ -1, 7, 10, 15, 20, 26, 18, 20, 24, 30, 18, 20, 24, 26, 30, 22, 24, 28, 30, 28, 28, 28, 28, 30, 30, 26, 28, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30 },
+    &.{ -1, 10, 16, 26, 18, 24, 16, 18, 22, 22, 26, 30, 22, 22, 24, 24, 28, 28, 26, 26, 26, 26, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28 },
+    &.{ -1, 13, 22, 18, 26, 18, 24, 18, 22, 20, 24, 28, 26, 24, 20, 30, 24, 28, 28, 26, 30, 28, 30, 30, 30, 30, 28, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30 },
+    &.{ -1, 17, 28, 22, 16, 22, 28, 26, 26, 24, 28, 24, 28, 22, 24, 24, 30, 28, 28, 26, 28, 30, 24, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30 },
+};
+pub const NumECCBlocks = [_][]const i16{
+    &.{ -1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 4, 4, 4, 4, 4, 6, 6, 6, 6, 7, 8, 8, 9, 9, 10, 12, 12, 12, 13, 14, 15, 16, 17, 18, 19, 19, 20, 21, 22, 24, 25 },
+    &.{ -1, 1, 1, 1, 2, 2, 4, 4, 4, 5, 5, 5, 8, 9, 9, 10, 10, 11, 13, 14, 16, 17, 17, 18, 20, 21, 23, 25, 26, 28, 29, 31, 33, 35, 37, 38, 40, 43, 45, 47, 49 },
+    &.{ -1, 1, 1, 2, 2, 4, 4, 6, 6, 8, 8, 8, 10, 12, 16, 12, 17, 16, 18, 21, 20, 23, 23, 25, 27, 29, 34, 34, 35, 38, 40, 43, 45, 48, 51, 53, 56, 59, 62, 65, 68 },
+    &.{ -1, 1, 1, 2, 4, 4, 4, 5, 6, 8, 8, 11, 11, 16, 16, 18, 16, 19, 21, 25, 25, 25, 34, 30, 32, 35, 37, 40, 42, 45, 48, 51, 54, 57, 60, 63, 66, 70, 74, 77, 81 },
+};
+
+pub const Penalty = enum(u8) {
+    n1 = 3,
+    n2 = 3,
+    n3 = 40,
+    n4 = 10,
+    pub const Info = struct {
+        horizRuns: Array(LinearRun),
+        vertRuns: Array(LinearRun),
+        twoByTwoBoxes: Array(@TypeOf(Point)),
+        horizFalseFinders: Array(LinearRun),
+        vertFalseFinders: Array(LinearRun),
+        numDarkModules: usize = 0,
+        penaltyPoints: Array(@TypeOf(.{ usize, usize, usize, usize })),
+    };
+};
+pub const LinearRun = struct {
+    startX: usize = 0,
+    startY: usize = 0,
+    runLen: usize = 0,
+};
+pub const FinderPenalty = struct {
+    runHistory: Array(usize),
+    runEndPositions: Array(usize),
+    position: usize = 0,
+    padding: ?usize = null,
+    direction: Dir,
+
+    outer: usize,
+    finders: []const LinearRun,
+
+    const Dir = enum { horiz, vert };
+
+    pub fn init(
+        a: Allocator,
+        qr_size: usize,
+        dir: Dir,
+        outer_position: usize,
+        finders: []const LinearRun,
+    ) FinderPenalty {
+        return .{
+            .runHistory = Array(usize).init(a),
+            .runEndPositions = Array(usize).init(a),
+            .outer = outer_position,
+            .padding = qr_size,
+            .finders = finders,
+            .direction = dir,
+        };
+    }
+};
