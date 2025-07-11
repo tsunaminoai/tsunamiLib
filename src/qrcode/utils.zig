@@ -73,8 +73,15 @@ pub const Segment = struct {
         const Kanji = [_]usize{ 8, 10, 12 };
         const Eci = [_]usize{ 0, 0, 0 };
         pub fn numCharCountBits(self: Mode, ver: Version) usize {
-            return (switch (self) {})[@intCast(@divFloor(ver.asInt() + 7, 17))];
+            return switch (self) {
+                .number => Numeric[@intCast(@divFloor(ver.asInt() + 7, 17))],
+                .alpha => Alpha[@intCast(@divFloor(ver.asInt() + 7, 17))],
+                .byte => Byte[@intCast(@divFloor(ver.asInt() + 7, 17))],
+                .kanji => Kanji[@intCast(@divFloor(ver.asInt() + 7, 17))],
+                .eci => Eci[@intCast(@divFloor(ver.asInt() + 7, 17))],
+            };
         }
+
         const UniTest = packed struct(u4) {
             is_num: bool = false,
             is_alpha: bool = false,
@@ -144,6 +151,57 @@ pub const Segment = struct {
             res += 4 + ccbits + (if (seg.data) |d| d.len else 0);
         }
         return res;
+    }
+    pub fn toDataCodewords(segment: Segment, allocator: Allocator) ![]u8 {
+        var bits = Array(u1).init(allocator);
+        defer bits.deinit();
+
+        // Add mode bits
+        for (0..4) |i| {
+            try bits.append(@intCast((@intFromEnum(segment.mode) >> @intCast(3 - i)) & 1));
+        }
+
+        // Add character count bits
+        const count_bits = segment.mode.numCharCountBits(segment.version);
+        for (0..count_bits) |i| {
+            try bits.append(@intCast((segment.numChars >> @intCast(count_bits - 1 - i)) & 1));
+        }
+
+        // Add data bits
+        try bits.appendSlice(segment.data);
+
+        // Add terminator (up to 4 bits)
+        const terminator_bits = @min(4, (8 - (bits.items.len % 8)) % 8);
+        for (0..terminator_bits) |_| {
+            try bits.append(0);
+        }
+
+        // Pad to byte boundary
+        while (bits.items.len % 8 != 0) {
+            try bits.append(0);
+        }
+
+        // Convert to bytes
+        var bytes = Array(u8).init(allocator);
+        defer bytes.deinit();
+
+        for (0..bits.items.len / 8) |i| {
+            var byte: u8 = 0;
+            for (0..8) |j| {
+                byte = (byte << 1) | bits.items[i * 8 + j];
+            }
+            try bytes.append(byte);
+        }
+
+        // Add padding bytes to reach required length
+        const target_bytes = segment.version.getNumDataCodewords();
+        const padding_pattern = [_]u8{ 0xEC, 0x11 };
+
+        while (bytes.items.len < target_bytes) {
+            try bytes.append(padding_pattern[(bytes.items.len - 19) % 2]);
+        }
+
+        return try bytes.toOwnedSlice();
     }
 };
 test "Segments" {
@@ -272,17 +330,17 @@ pub const QRCode = struct {
     pub fn makeZigZagScan(self: QRCode) ![]Point {
         var res = Array(Point).init(self.allocator);
         defer res.deinit();
-        var right: isize = self.side_len;
+        var right: isize = @intCast(self.side_len);
         while (right >= 1) : (right -= 2) {
             if (right == 6) right = 5;
             var vert: usize = 0;
             while (vert < self.side_len) : (vert += 1) {
                 for (0..2) |j| {
-                    const x = right - j;
+                    const x = @as(usize, @intCast(right)) - j;
                     const up = ((right + 1) & 2) == 0;
                     const y = if (up) self.side_len - 1 - vert else vert;
                     if (self.modules.items[x].items[y] == .function)
-                        try res.append(.{ x, y });
+                        try res.append(.{ .x = x, .y = y });
                 }
             }
         }
@@ -292,13 +350,13 @@ pub const QRCode = struct {
         for (0..self.side_len) |x| {
             for (0..self.side_len) |y| {
                 const a = mask.modules.items[x].items[y];
-                const b = self.modules.items[x].items[y];
+                var b = self.modules.items[x].items[y];
                 if (a == .mask and b == .filled)
-                    b.color = b.color != a.color;
+                    b.filled.color = b.filled.color != a.mask.color;
             }
         }
     }
-    pub fn drawCodewords(self: QRCode, codewords: []const Codeword, zig_zag: []const Point) !void {
+    pub fn drawCodewords(self: *QRCode, codewords: []const Codeword, zig_zag: []const Point) !void {
         if (codewords.len != @divFloor(self.version.getNumRawDataModules(), 8)) {
             return error.InvalidArgument;
         }
@@ -306,11 +364,14 @@ pub const QRCode = struct {
             if (i < codewords.len * 8) {
                 const cw = codewords[i >> 3];
                 self.modules.items[z.x].items[z.y] = .{
-                    .code_word = .init(getBit(cw.value, 7 - (i & 7))),
+                    .code_word = .{ .color = getBit(cw.value, 7 - (i & 7)) == 1 },
                 };
-            } else self.modules.items[z.x].items[z.y] = .{ .remainder = .{} };
+            } else {
+                self.modules.items[z.x].items[z.y] = .{ .remainder = .{} };
+            }
         }
     }
+
     pub fn interleaveBlocks(
         self: QRCode,
         data: []const []const DataCodeWord,
@@ -515,11 +576,11 @@ pub const QRCode = struct {
         errdefer res.deinit();
         for (0..self.side_len) |x| {
             for (0..self.side_len) |y| {
-                const invert = switch (mask) {
+                const invert: bool = switch (mask) {
                     0 => @mod(x + y, 2) == 0,
                     1 => @mod(y, 2) == 0,
                     2 => @mod(x, 3) == 0,
-                    3 => @mod(x + y, 3),
+                    3 => @mod(x + y, 3) == 0,
                     4 => @divFloor(x, 3) + @mod(@divFloor(y, 2), 2) == 0,
                     5 => x * @mod(y, 2) + x * @mod(y, 3) == 0,
                     6 => @mod(x * @mod(y, 2) + x * @mod(y, 3), 2) == 0,
@@ -639,6 +700,30 @@ pub const QRCode = struct {
         @memcpy(&info.penalties, &penalties);
         return info;
     }
+
+    pub fn encodeByteMode(input: []const u8, allocator: Allocator) ![]u1 {
+        var bits = Array(u1).init(allocator);
+        defer bits.deinit();
+
+        // Mode indicator (4 bits): 0100 for byte mode
+        try bits.appendSlice(&[_]u1{ 0, 1, 0, 0 });
+
+        // Character count (8 bits for version 2)
+        const char_count = input.len;
+        for (0..8) |i| {
+            try bits.append(@intCast((char_count >> @intCast(7 - i)) & 1));
+        }
+
+        // Data bits (8 bits per character)
+        for (input) |byte| {
+            for (0..8) |i| {
+                try bits.append(@intCast((byte >> @intCast(7 - i)) & 1));
+            }
+        }
+
+        return try bits.toOwnedSlice();
+    }
+
     pub fn format(self: QRCode, comptime fmt: []const u8, options: anytype, writer: anytype) !void {
         _ = fmt; // autofix
         _ = options; // autofix
@@ -728,6 +813,70 @@ test "hello world" {
     std.debug.print("{}\n", .{q});
 }
 
+test "hello world complete" {
+    const input = Tests.hello_world;
+
+    var q = try QRCode.init(tst.allocator, 25, .low, .@"2");
+    defer q.deinit();
+
+    // Draw function patterns
+    q.clearNewFlags();
+    q.drawTimingPatterns();
+    q.drawFinderPatterns();
+    try q.drawAlignmentPatterns();
+    try q.drawVersionInfo();
+
+    // Encode data
+    const bit_data = try QRCode.encodeByteMode(input, tst.allocator);
+    defer tst.allocator.free(bit_data);
+
+    const segment = try Segment.init(input, .@"2", bit_data, input.len);
+
+    // Convert to data codewords
+    const data_codewords = try segment.toDataCodewords(tst.allocator);
+    defer tst.allocator.free(data_codewords);
+
+    // Generate ECC
+    var rs = try ReedSolomonGenerator.init(tst.allocator, 7);
+    defer rs.deinit();
+
+    const ecc_bytes = try rs.getRemainder(data_codewords);
+    defer tst.allocator.free(ecc_bytes);
+
+    // Verify against expected values
+    const expected_data = [_]u8{ 0x41, 0x14, 0x86, 0x56, 0xC6, 0xC6, 0xF2, 0xC2, 0x07, 0x76, 0xF7, 0x26, 0xC6, 0x42, 0x12, 0x03, 0x13, 0x23, 0x30 };
+    const expected_ecc = [_]u8{ 0x85, 0xA9, 0x5E, 0x07, 0x0A, 0x36, 0xC9 };
+
+    try tst.expectEqualSlices(u8, &expected_data, data_codewords);
+    try tst.expectEqualSlices(u8, &expected_ecc, ecc_bytes);
+
+    // Place data and ECC in QR code
+    var all_codewords = Array(Codeword).init(tst.allocator);
+    defer all_codewords.deinit();
+
+    for (data_codewords) |byte| {
+        try all_codewords.append(try Codeword.init(byte));
+    }
+    for (ecc_bytes) |byte| {
+        try all_codewords.append(try Codeword.init(byte));
+    }
+
+    const zig_zag = try q.makeZigZagScan();
+    defer tst.allocator.free(zig_zag);
+
+    try q.drawCodewords(all_codewords.items, zig_zag);
+
+    // Apply mask and format info
+    var mask = try q.makeMask(0);
+    defer mask.deinit();
+
+    try q.applyMask(mask);
+    try q.drawFormatbits(0);
+
+    // Print result
+    std.debug.print("{}\n", .{q});
+}
+
 const KanjiSet = "0000000000000000000000010000000000000000C811350000000800000008000000000000000000000000000000000000000000000000000000000000000000" ++
     "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000EFFFBF30EFFFBF30000000000000" ++
     "2000FFFFFFFFFFFFFFFF200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" ++
@@ -813,7 +962,7 @@ pub const NumECCBlocks = [_][]const i16{
 pub const ReedSolomonGenerator = struct {
     coeffs: Array(u8),
     allocator: Allocator,
-    pub fn init(a: Allocator, degree: usize) ReedSolomonGenerator {
+    pub fn init(a: Allocator, degree: usize) !ReedSolomonGenerator {
         if (degree < 1 or degree > 255) return error.DegreeOutOfRange;
         var self = ReedSolomonGenerator{
             .coeffs = Array(u8).init(a),
@@ -827,11 +976,11 @@ pub const ReedSolomonGenerator = struct {
         var root: usize = 1;
         for (0..degree) |_| {
             for (0..self.coeffs.items.len) |j| {
-                self.coeffs.items[j] = self.multiply(self.coeffs.items[j], root);
+                self.coeffs.items[j] = self.multiply(self.coeffs.items[j], @intCast(root));
                 if (j + 1 < self.coeffs.items.len)
                     self.coeffs.items[j] ^= self.coeffs.items[j + 1];
             }
-            root = self.multiply(root, 0x2);
+            root = self.multiply(@intCast(root), 0x2);
         }
 
         return self;
@@ -840,22 +989,22 @@ pub const ReedSolomonGenerator = struct {
         self.coeffs.deinit();
     }
 
-    fn multiply(self: ReedSolomonGenerator, x: u8, y: u8) !u8 {
-        _ = self; // autofix
-        if (x >> 8 != 0 or y >> 8 != 0) return error.ByteOutOfRange;
+    fn multiply(self: ReedSolomonGenerator, x: u8, y: u8) u8 {
+        _ = self;
+        if (@as(u16, x) >> @intCast(8) != 0 or @as(u16, y) >> @intCast(8) != 0) return 0;
 
-        var z: u8 = 0;
+        var z: u16 = 0;
         var i: isize = 7;
         while (i >= 0) : (i -= 1) {
             z = (z << 1) ^ ((z >> 7) * 0x11D);
-            z ^= ((y >> i) & 1) * x;
+            z ^= (((y >> @intCast(i)) & 1) * x);
         }
-        if (z >> 8 != 0) return error.GotZero;
-        return z;
+        return @truncate(z);
     }
+
     pub fn getRemainder(self: *ReedSolomonGenerator, data_bytes: []const u8) ![]u8 {
         var res = try self.coeffs.clone();
-        @memset(&res.items, 0);
+        @memset(res.items, 0);
 
         for (data_bytes) |byte| {
             const factor = byte ^ (res.orderedRemove(0));
