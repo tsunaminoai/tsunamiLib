@@ -124,10 +124,10 @@ pub const Segment = struct {
             return 0 != (p >> @intCast(trunc & @as(u3, 3))) & @as(u3, 1);
         }
     };
-    pub fn init(m: Mode, ver: Version, bit_data: []const u1, num_chars: usize) !Segment {
+    pub fn init(input: []const u8, ver: Version, bit_data: []const u1, num_chars: usize) !Segment {
         if (num_chars == 0) return error.InvalidNumberofChars;
         const s = Segment{
-            .mode = m,
+            .mode = try Mode.analyze_unicode(input),
             .numChars = num_chars,
             .data = bit_data,
             .version = ver,
@@ -148,13 +148,12 @@ pub const Segment = struct {
 };
 test "Segments" {
     const input = Tests.hello_world;
-    _ = input; // autofix
     try tst.expectEqual(.byte, try Segment.Mode.analyze_unicode(Tests.hello_world));
     try tst.expectEqual(.kanji, Segment.Mode.analyze_unicode(Tests.kanji));
     try tst.expectEqual(.number, try Segment.Mode.analyze_unicode(Tests.numeric));
     try tst.expectEqual(.byte, try Segment.Mode.analyze_unicode(Tests.utf8));
     try tst.expectEqual(.alpha, try Segment.Mode.analyze_unicode(Tests.alpha));
-    const s = try Segment.init(.byte, .@"2", &[_]u1{ 1, 0, 1, 0, 1 }, 1);
+    const s = try Segment.init(input, .@"2", &[_]u1{ 1, 0, 1, 0, 1 }, 1);
     _ = s; // autofix
     // try tst.expectEqual(1, s.count);
 }
@@ -681,9 +680,13 @@ test "version" {
 
 test "hello world" {
     const input = Tests.hello_world;
-    _ = input; // autofix
     // std.debug.print("{}\n", .{cfg});
-    const expect_codewords = [_]u8{ 0x41, 0x14, 0x86, 0x56, 0xC6, 0xC6, 0xF2, 0xC2, 0x07, 0x76, 0xF7, 0x26, 0xC6, 0x42, 0x12, 0x03, 0x13, 0x23, 0x30, 0x85, 0xA9, 0x5E, 0x07, 0x0A, 0x36, 0xC9 };
+    const expect_codewords = [_]u8{
+        // data
+        0x41, 0x14, 0x86, 0x56, 0xC6, 0xC6, 0xF2, 0xC2, 0x07, 0x76, 0xF7, 0x26, 0xC6, 0x42, 0x12, 0x03, 0x13, 0x23, 0x30,
+        // ecc
+        0x85, 0xA9, 0x5E, 0x07, 0x0A, 0x36, 0xC9,
+    };
     _ = expect_codewords; // autofix
 
     var q = try QRCode.init(tst.allocator, 25, .low, .@"2");
@@ -693,8 +696,35 @@ test "hello world" {
     q.drawFinderPatterns();
     try q.drawAlignmentPatterns();
     try q.drawVersionInfo();
-    // try q.drawFormatbits(2);
 
+    //todo: correct order
+    // Returns a QrCode.Ecc object based on the radio buttons in the HTML form.
+    // function getInputErrorCorrectionLevel() {
+    //     if (getInput("errcorlvl-medium").checked)
+    //         return qrcodegen.QrCode.Ecc.MEDIUM;
+    //     else if (getInput("errcorlvl-quartile").checked)
+    //         return qrcodegen.QrCode.Ecc.QUARTILE;
+    //     else if (getInput("errcorlvl-high").checked)
+    //         return qrcodegen.QrCode.Ecc.HIGH;
+    //     else // In case no radio button is depressed
+    //         return qrcodegen.QrCode.Ecc.LOW;
+    // }
+    // // Get form inputs and compute QR Code
+    // const ecl = getInputErrorCorrectionLevel();
+    // const text = getElem("text-input").value;
+    // const segs = qrcodegen.QrSegment.makeSegments(text);
+    // const minVer = parseInt(getInput("version-min-input").value, 10);
+    // const maxVer = parseInt(getInput("version-max-input").value, 10);
+    // const mask = parseInt(getInput("mask-input").value, 10);
+    // const boostEcc = getInput("boost-ecc-input").checked;
+    // const qr = qrcodegen.QrCode.encodeSegments(segs, ecl, minVer, maxVer, mask, boostEcc);
+
+    const s = try Segment.init(input, .@"2", @ptrCast(input), input.len);
+    // const blocks = try q.splitIntoBlocks(input);
+    // defer blocks.deinit();
+    // try q.drawFormatbits(2);'
+
+    std.debug.print("{any}\n", .{s});
     std.debug.print("{}\n", .{q});
 }
 
