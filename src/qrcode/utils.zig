@@ -450,6 +450,112 @@ pub const QRCode = struct {
         }
         return res;
     }
+    pub fn computePenalties(self: QRCode) !Penalty.Info {
+        const penalties: [4]usize = [_]usize{0} ** 4;
+        var info = Penalty.Info.init(self.allocator);
+        errdefer info.deinit();
+        const colors = Array([]bool).init(self.allocator);
+        defer colors.deinit();
+
+        for (self.modules.items) |col| {
+            for (col.items) |cell| {
+                try colors.append(cell == .filled and cell.color);
+            }
+        }
+        for (0..self.side_len) |y| {
+            var run_color = false;
+            var runX: usize = 0;
+            var runHist = FinderPenalty.init(
+                self.allocator,
+                self.side_len,
+                .horiz,
+                y,
+                info.horizFalseFinders,
+            );
+            errdefer runHist.deinit();
+            for (0..self.side_len) |x| {
+                if (colors.items[x][y] == run_color) {
+                    runX += 1;
+                    if (runX == 5) {
+                        penalties[0] += Penalty.n1.asInt(usize);
+                        try info.horizRuns.append(.init(x + 1 - runX, y, runX));
+                    } else if (runX > 5) {
+                        penalties[0] += 1;
+                        info.horizRuns.items[info.horizRuns.items.len - 1] = LinearRun.init(
+                            x + 1 - runX,
+                            y,
+                            runX,
+                        );
+                    }
+                } else {
+                    try runHist.addHistory(runX);
+                    if (!run_color)
+                        penalties[2] ++ (try runHist.countAndAddPatterns()) * Penalty.n3.asInt(usize);
+
+                    run_color = colors.items[x][y];
+                    runX += 1;
+                }
+            }
+        }
+
+        for (0..self.side_len) |x| {
+            var run_color = false;
+            var runY: usize = 0;
+            var runHist = FinderPenalty.init(
+                self.allocator,
+                self.side_len,
+                .vert,
+                x,
+                info.horizFalseFinders,
+            );
+            errdefer runHist.deinit();
+            for (0..self.side_len) |y| {
+                if (colors.items[x][y] == run_color) {
+                    runY += 1;
+                    if (runY == 5) {
+                        penalties[0] += Penalty.n1.asInt(usize);
+                        try info.vertRuns.append(.init(x, y + 1 - runY, runY));
+                    } else if (runY > 5) {
+                        penalties[0] += 1;
+                        info.vertRuns.items[info.vertRuns.items.len - 1] = LinearRun.init(
+                            x,
+                            y + 1 - runY,
+                            runY,
+                        );
+                    }
+                } else {
+                    try runHist.addHistory(runY);
+                    if (!run_color)
+                        penalties[2] ++ (try runHist.countAndAddPatterns()) * Penalty.n3.asInt(usize);
+
+                    run_color = colors.items[x][y];
+                    runY += 1;
+                }
+            }
+        }
+
+        for (0..self.side_len - 1) |x| {
+            for (0..self.side_len - 1) |y| {
+                const c = colors.items[x][y];
+                if (c == colors.items[x + 1][y] and c == colors[x][y + 1] and c == colors[x + 1][y + 1]) {
+                    penalties[1] += Penalty.n2.asInt(usize);
+                    try info.twoByTwoBoxes.append(.{ .x = x, .y = y });
+                }
+            }
+        }
+
+        var dark: usize = 0;
+        for (colors.items) |col| {
+            dark = @reduce(.Add, col);
+        }
+        const total = self.side_len * self.side_len;
+        var k: usize = 0;
+        while (@abs(dark * 20 - total * 10) > (k + 1) * total)
+            k += 1;
+        penalties[3] += k * Penalty.n4.asInt(usize);
+        @memcpy(&info.penalties, &penalties);
+        return info;
+    }
     pub fn format(self: QRCode, comptime fmt: []const u8, options: anytype, writer: anytype) !void {
         _ = fmt; // autofix
         _ = options; // autofix
@@ -654,14 +760,36 @@ pub const Penalty = enum(u8) {
     n2 = 3,
     n3 = 40,
     n4 = 10,
+    pub fn asInt(self: Penalty, comptime T: type) T {
+        return @intCast(self);
+    }
+    pub const Points = struct { usize, usize, usize, usize };
     pub const Info = struct {
         horizRuns: Array(LinearRun),
         vertRuns: Array(LinearRun),
-        twoByTwoBoxes: Array(@TypeOf(Point)),
+        twoByTwoBoxes: Array(Point),
         horizFalseFinders: Array(LinearRun),
         vertFalseFinders: Array(LinearRun),
         numDarkModules: usize = 0,
-        penaltyPoints: Array(@TypeOf(.{ usize, usize, usize, usize })),
+        penaltyPoints: Array(Points),
+        pub fn init(a: Allocator) Info {
+            return .{
+                .horzRuns = Array(Point).init(a),
+                .vertRuns = Array(Point).init(a),
+                .twoByTwos = Array(Point).init(a),
+                .horzFinders = Array(Point).init(a),
+                .vertFinders = Array(Point).init(a),
+                .dark = Array(Point).init(a),
+            };
+        }
+        pub fn deinit(self: Info) void {
+            self.horizRuns.deinit();
+            self.vertRuns.deinit();
+            self.twoByTwoBoxes.deinit();
+            self.horizFalseFinders.deinit();
+            self.vertFalseFinders.deinit();
+            self.penaltyPoints.deinit();
+        }
     };
 };
 pub const LinearRun = struct {
