@@ -317,7 +317,33 @@ pub const QRCode = struct {
         _ = block_len; // autofix
         const short_len = blocks[0].len;
         _ = short_len; // autofix
+
     }
+
+    pub fn splitIntoBlocks(self: QRCode, data: []const DataCodeWord) !Array([]const DataCodeWord) {
+        const numBlocks = NumECCBlocks[@intFromEnum(self.ecc_level)][@intFromEnum(self.version)];
+        const eccBlockLen = ECCCodeWordsPerBlock[@intFromEnum(self.ecc_level)][@intFromEnum(self.version)];
+        const rawCodeWords = @divFloor(self.version.getNumRawDataModules(), 8);
+        const numShortBlocks = numBlocks - @mod(rawCodeWords, numBlocks);
+        const shortBlockLen = @divFloor(rawCodeWords, numBlocks);
+
+        var res = Array([]const DataCodeWord).init(self.allocator);
+        errdefer res.deinit();
+
+        var off: usize = 0;
+        for (0..numBlocks) |bi| {
+            const end = off + shortBlockLen - eccBlockLen + if (bi < numShortBlocks) 0 else 1;
+            const block = data[off..end];
+            for (block, 0..) |*dcw, i| {
+                dcw.cw.blockIndex = bi;
+                dcw.cw.indexInBlock = i;
+            }
+            try res.append(block);
+            off = end;
+        }
+        return res;
+    }
+
     pub fn drawVersionInfo(self: *QRCode) !void {
         if (@intFromEnum(self.version) < 7) return;
 
