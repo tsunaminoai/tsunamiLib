@@ -312,12 +312,33 @@ pub const QRCode = struct {
             } else self.modules.items[z.x].items[z.y] = .{ .remainder = .{} };
         }
     }
-    pub fn interleaveBlocks(self: QRCode, blocks: []const []const Codeword) ![]ECCCodeWord {
-        const block_len = ECCCodeWordsPerBlock[@intFromEnum(self.ecc_level)][@intFromEnum(self.version)];
-        _ = block_len; // autofix
-        const short_len = blocks[0].len;
-        _ = short_len; // autofix
-
+    pub fn interleaveBlocks(
+        self: QRCode,
+        data: []const []const DataCodeWord,
+        ecc: []const []const ECCCodeWord,
+    ) ![]ECCCodeWord {
+        const eccBlockLen = ecc[0].len;
+        const maxDataBlockLen = data[data.len - 1].len;
+        var res = Array(Codeword).init(self.allocator);
+        for (0..maxDataBlockLen) |i| {
+            for (data) |block| {
+                if (i < block.len) {
+                    const cw = block[i];
+                    cw.postInterleaveIndex = res.items.len;
+                    try res.append(cw);
+                }
+            }
+        }
+        for (0..eccBlockLen) |i| {
+            for (ecc) |block| {
+                if (i < block.len) {
+                    const cw = block[i];
+                    cw.postInterleaveIndex = res.items.len;
+                    try res.append(cw);
+                }
+            }
+        }
+        return try res.toOwnedSlice();
     }
 
     pub fn splitIntoBlocks(self: QRCode, data: []const DataCodeWord) !Array([]const DataCodeWord) {
@@ -341,6 +362,43 @@ pub const QRCode = struct {
             try res.append(block);
             off = end;
         }
+        return res;
+    }
+
+    pub fn computerEccForBlocks(self: *QRCode, blocks: []const DataCodeWord) !Array([]const ECCCodeWord) {
+        const eccBlockLen = ECCCodeWordsPerBlock[@intFromEnum(self.ecc_level)][@intFromEnum(self.version)];
+        const shortBlockLen = blocks[0].len;
+        const rs = ReedSolomonGenerator.init(self.allocator, eccBlockLen);
+        defer rs.deinit();
+
+        var preInterleaveIndex: usize = 0;
+
+        var res = Array([]ECCCodeWord).init(self.allocator);
+        errdefer res.deinit();
+
+        for (blocks, 0..) |block, bi| {
+            for (block) |*dcw| {
+                dcw.cw.preInterleaveIndex = preInterleaveIndex;
+                preInterleaveIndex += 1;
+
+                const blockBytes = Array(u8).init(self.allocator);
+                defer blockBytes.deinit();
+
+                for (block) |b| try blockBytes.append(b.cw.value);
+
+                const eccBytes = try rs.getRemainder(blockBytes);
+
+                for (eccBytes, 0..) |b, i| {
+                    var ecw = try ECCCodeWord.init(b);
+                    ecw.cw.preInterleaveIndex = preInterleaveIndex;
+                    preInterleaveIndex += 1;
+                    ecw.cw.blockIndex = bi;
+                    ecw.cw.indexInBlock = shortBlockLen + 1 + i;
+                    try res.append(ecw);
+                }
+            }
+        }
+
         return res;
     }
 
