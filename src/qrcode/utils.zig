@@ -839,6 +839,8 @@ test "hello world complete" {
     const data_codewords = try segment.toDataCodewords(tst.allocator);
     defer tst.allocator.free(data_codewords);
 
+    std.debug.print("{any}\n", .{data_codewords});
+
     // Generate ECC
     var rs = try ReedSolomonGenerator.init(tst.allocator, 7);
     defer rs.deinit();
@@ -848,12 +850,10 @@ test "hello world complete" {
 
     // Verify against expected values
     const expected_data = [_]u8{ 0x41, 0x14, 0x86, 0x56, 0xC6, 0xC6, 0xF2, 0xC2, 0x07, 0x76, 0xF7, 0x26, 0xC6, 0x42, 0x12, 0x03, 0x13, 0x23, 0x30 };
-    _ = expected_data; // autofix
-    const expected_ecc = [_]u8{ 0x85, 0xA9, 0x5E, 0x07, 0x0A, 0x36, 0xC9 };
-    _ = expected_ecc; // autofix
+    const expected_ecc = [_]u8{ 0xEC, 0x11, 0xEC, 0x11, 0xEC, 0x11, 0xEC, 0x11, 0xEC, 0x11, 0xEC, 0x11, 0xEC, 0x11, 0xEC };
 
-    // try tst.expectEqualSlices(u8, &expected_data, data_codewords);
-    // try tst.expectEqualSlices(u8, &expected_ecc, ecc_bytes);
+    try tst.expectEqualSlices(u8, &expected_data, data_codewords);
+    try tst.expectEqualSlices(u8, &expected_ecc, ecc_bytes);
 
     // Place data and ECC in QR code
     var all_codewords = Array(Codeword).init(tst.allocator);
@@ -865,6 +865,12 @@ test "hello world complete" {
     for (ecc_bytes) |byte| {
         try all_codewords.append(try Codeword.init(byte));
     }
+
+    // try tst.expectEqualSlices(
+    //     u8,
+    //     &.{ 0x41, 0x14, 0x86, 0x56, 0xC6, 0xC6, 0xF2, 0xC2, 0x07, 0x76, 0xF7, 0x26, 0xC6, 0x42, 0x12, 0x03, 0x13, 0x23, 0x30, 0xEC, 0x11, 0xEC, 0x11, 0xEC, 0x11, 0xEC, 0x11, 0xEC, 0x11, 0xEC, 0x11, 0xEC, 0x11, 0xEC, 0xC6, 0x98, 0x91, 0x5E, 0x3E, 0x76, 0x5D, 0x06, 0x03, 0x10 },
+    //     all_codewords.items,
+    // );
 
     const zig_zag = try q.makeZigZagScan();
     defer tst.allocator.free(zig_zag);
