@@ -1,10 +1,83 @@
 {
   "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.10.7/.schema/devbox.schema.json",
-  "packages": [
-    "zls@0.15.0",
-    "watchexec@latest",
-    "zig@0.16.0"
-  ],
+  "packages": {
+    "zls": "0.15.0",
+    "watchexec": "latest",
+    "zig": "0.16.0",
+    "libGL": {
+      "version": "latest",
+      "platforms": [
+        "x86_64-linux",
+        "aarch64-linux"
+      ]
+    },
+    "xorg.libX11": {
+      "version": "latest",
+      "outputs": [
+        "out",
+        "dev"
+      ],
+      "platforms": [
+        "x86_64-linux",
+        "aarch64-linux"
+      ]
+    },
+    "xorg.libXcursor": {
+      "version": "latest",
+      "outputs": [
+        "out",
+        "dev"
+      ],
+      "platforms": [
+        "x86_64-linux",
+        "aarch64-linux"
+      ]
+    },
+    "xorg.libXrandr": {
+      "version": "latest",
+      "outputs": [
+        "out",
+        "dev"
+      ],
+      "platforms": [
+        "x86_64-linux",
+        "aarch64-linux"
+      ]
+    },
+    "xorg.libXext": {
+      "version": "latest",
+      "outputs": [
+        "out",
+        "dev"
+      ],
+      "platforms": [
+        "x86_64-linux",
+        "aarch64-linux"
+      ]
+    },
+    "xorg.libXinerama": {
+      "version": "latest",
+      "outputs": [
+        "out",
+        "dev"
+      ],
+      "platforms": [
+        "x86_64-linux",
+        "aarch64-linux"
+      ]
+    },
+    "xorg.libXi": {
+      "version": "latest",
+      "outputs": [
+        "out",
+        "dev"
+      ],
+      "platforms": [
+        "x86_64-linux",
+        "aarch64-linux"
+      ]
+    }
+  },
   "shell": {
     "init_hook": [
       "echo 'Welcome to devbox!' > /dev/null"

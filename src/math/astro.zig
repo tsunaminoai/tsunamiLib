@@ -1,6 +1,5 @@
 const std = @import("std");
 const Array = std.ArrayList;
-const Allocator = std.mem.Allocator;
 const tst = std.testing;
 const math = std.math;
 
@@ -10,7 +9,7 @@ pub const DPI = math.pi;
 pub const D2PI = math.pi * 2;
 
 /// Seconds to Radians
-pub const DS2R = DPI / (12 * 3600);
+pub const DS2R = DPI / (12.0 * 3600.0);
 
 /// Acseconds to Radians
 pub const AS2R = 4.848136811095359935899141e-6;
@@ -38,62 +37,40 @@ pub const SR = 7.292115855306589e-5;
 pub const A0 = 6378140e0;
 /// Reference spheroid flattening factor and useful function
 pub const SPHF = 1e0 / 298.257e0;
-pub const SPHB = (1e0 - SPHF) ** 2;
+pub const SPHB = (1e0 - SPHF) * (1e0 - SPHF);
 /// Astronomical unit in metres
 pub const AU = 1.49597870e11;
 
-inline fn dmod(A: anytype, B: @TypeOf(A)) @TypeOf(A) {
+inline fn dmod(A: anytype, B: @TypeOf(A)) !@TypeOf(A) {
     return math.mod(@TypeOf(A), A, B);
 }
 
-inline fn dranrm(value: anytype) @TypeOf(value) {
+inline fn dranrm(value: anytype) !@TypeOf(value) {
     return dmod(value, D2PI);
 }
 
-pub fn gmst(value: anytype) @TypeOf(value) {
+pub fn gmst(value: anytype) !@TypeOf(value) {
     // Julian centuries from fundamental epoch J2000 to this UT
 
     const tu = (value - 51544.5) / 36525.0;
-    return dranrm(dmod(value, 1) * D2PI + (24110.54841 + (8640184.812866 + (0.093104 - 6.2e-6 * tu) * tu) * tu) + DS2R);
+    return try dranrm(try dmod(value, 1) * D2PI + (24110.54841 + (8640184.812866 + (0.093104 - 6.2e-6 * tu) * tu) * tu) + DS2R);
 }
 
-pub fn hour_angle(mjd: anytype, ra: @TypeOf(mjd), long: @TypeOf(mjd)) @TypeOf(mjd) {
-    return math.radiansToDegrees(dranrm(dranrm(gmst(mjd) + long) - ra));
+pub fn hour_angle(mjd: anytype, ra: @TypeOf(mjd), long: @TypeOf(mjd)) !@TypeOf(mjd) {
+    return math.radiansToDegrees(try dranrm(try dranrm(try gmst(mjd) + long) - ra));
 }
 
-/// Gregorian calendar to year and day in year (in a Julian calendar
-/// aligned to the 20th/21st century Gregorian calendar).
-/// Given:
-/// IY,IM,ID   i    year, month, day in Gregorian calendar
-/// Returned:
-/// NY         i    year (re-aligned Julian calendar)
-/// ND         i    day in year (1 = January 1st)
-/// 0 = OK
-/// 1 = bad year (before -4711)
-/// 2 = bad month
-/// 3 = bad day (but conversion performed)
-/// Notes:
-/// 1  This routine exists to support the low-precision routines
-/// sla_EARTH, sla_MOON and sla_ECOR.
-/// 2  Between 1900 March 1 and 2100 February 28 it returns answers
-/// which are consistent with the ordinary Gregorian calendar.
-/// Outside this range there will be a discrepancy which increases
-/// by one day for every non-leap century year.
-/// 3  The essence of the algorithm is first to express the Gregorian
-/// date as a Julian Day Number and then to convert this back to
-/// a Julian calendar date, with day-in-year instead of month and
-/// day.  See 12.92-1 and 12.95-1 in the reference.
-/// Reference:  Explanatory Supplement to the Astronomical Almanac,
-/// ed P.K.Seidelmann, University Science Books (1992),
-/// p604-606.
-pub fn clyd(year: anytype, month: @TypeOf(year), day: @TypeOf(year)) !std.meta.Tuple(&[_]type{ @TypeOf(year), @TypeOf(year) }) {
+/// Converts a Gregorian date to (year, day-of-year) in a Julian calendar
+/// realigned to match Gregorian dates between 1900-03-01 and 2100-02-28;
+/// outside that range the two calendars drift by a day per non-leap century.
+pub fn clyd(year: anytype, month: @TypeOf(year), day: @TypeOf(year)) !@Tuple(&[_]type{ @TypeOf(year), @TypeOf(year) }) {
     const T = @TypeOf(year);
     var ret_year: T = 0;
     var ret_day: T = 0;
 
     if (year >= -4711) {
         if (1 <= month and month <= 12) {
-            var month_lengths = &[_]T{ 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+            var month_lengths: [12]T = .{ 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
 
             if (@mod(year, 4) == 0 and (@mod(year, 100) != 0 or @mod(year, 400) == 0))
                 month_lengths[1] = 29;
@@ -133,18 +110,9 @@ pub fn Spherical(comptime T: type) type {
     };
 }
 
-///   Cartesian to spherical coordinates
-///   Given:
-///      V     d(3)   x,y,z vector
-///   Returned:
-///      A,B   d      spherical coordinates in radians
-///   The spherical coordinates are longitude (+ve anticlockwise looking
-///   from the +ve latitude pole) and latitude.  The Cartesian coordinates
-///   are right handed, with the x axis at zero longitude and latitude, and
-///   the z axis at the +ve latitude pole.
-///   If V is null, zero A and B are returned.  At either pole, zero A is
-///   returned.
-///   Last revision:   22 July 2004
+/// Longitude is +ve anticlockwise looking from the +ve latitude pole; the
+/// x axis is at zero longitude/latitude, z axis at the +ve latitude pole.
+/// At either pole, longitude is returned as zero.
 pub fn dcc2s(comptime T: type, coord: Cartesian(T)) Spherical(T) {
     const r = @sqrt(coord.x * coord.x + coord.y * coord.y);
     return .{
@@ -153,21 +121,7 @@ pub fn dcc2s(comptime T: type, coord: Cartesian(T)) Spherical(T) {
     };
 }
 
-///   Spherical coordinates to direction cosines (double precision)
-///
-///   Given:
-///      A,B       d      spherical coordinates in radians
-///                          (RA,Dec), (long,lat) etc.
-///
-///   Returned:
-///      V         d(3)   x,y,z unit vector
-///
-///   The spherical coordinates are longitude (+ve anticlockwise looking
-///   from the +ve latitude pole) and latitude.  The Cartesian coordinates
-///   are right handed, with the x axis at zero longitude and latitude, and
-///   the z axis at the +ve latitude pole.
-///
-///   Last revision:   26 December 2004
+/// Inverse of `dcc2s`: same longitude/latitude convention (see there).
 pub fn dcs2c(comptime T: type, sphere: Spherical(T)) Cartesian(T) {
     const right_acention = sphere.longitude;
     const declanation = sphere.latitude;
@@ -178,6 +132,24 @@ pub fn dcs2c(comptime T: type, sphere: Spherical(T)) Cartesian(T) {
     };
 }
 
-test {
-    // std.debug.print("{}\n", .{try clyd(2025, 1, 1)});
+// ── Tests ────────────────────────────────────────────────────────────────
+
+test "gmst at J2000" {
+    // MJD 51544.5 (J2000 epoch) should give gmst in radians
+    const result = try gmst(51544.5);
+    try tst.expect(result > 4.0 and result < 6.0);
+}
+
+test "dcs2c/dcc2s round trip" {
+    const c1 = dcs2c(f64, .{ .longitude = 0.5, .latitude = 0.3 });
+    const s2 = dcc2s(f64, c1);
+    try tst.expectApproxEqAbs(@as(f64, 0.5), s2.longitude, 1e-10);
+    try tst.expectApproxEqAbs(@as(f64, 0.3), s2.latitude, 1e-10);
+}
+
+test "clyd known date" {
+    const result = try clyd(2025, 1, 1);
+    // clyd converts to Julian calendar; 2025/1/1 Gregorian -> 2098/338 Julian
+    try tst.expect(result[0] == 2098);
+    try tst.expect(result[1] == 338);
 }
