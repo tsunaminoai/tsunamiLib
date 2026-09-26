@@ -1,41 +1,20 @@
 const std = @import("std");
-const Array = std.ArrayList;
-const Allocator = std.mem.Allocator;
-const tst = std.testing;
-const math = std.math;
-pub const Astro = @import("astro.zig");
 
-const koino = @import("koino");
+pub const contract = @import("contract.zig");
+
+pub const dsp = struct {
+    pub const fft = @import("dsp/fft.zig");
+};
 
 test {
-    std.testing.refAllDecls(@This());
+    refAllNamespaces(@This());
 }
-test {
-    var k = try koino.parser.Parser.init(tst.allocator, .{
-        .extensions = .{},
-    });
-    defer k.deinit();
 
-    try k.feed("**Hello**, [world](http://world.gov)!");
-
-    const doc = try k.finish();
-    var iter = doc.traverseIterator();
-    while (iter.next()) |node| {
-        switch (node) {
-            else => {
-                // std.debug.print("Node: {}\n", .{n});
-            },
+fn refAllNamespaces(comptime T: type) void {
+    inline for (comptime std.meta.declarations(T)) |d| {
+        const v = @field(T, d.name);
+        if (@TypeOf(v) == type and @typeInfo(v) == .@"struct" and std.meta.declarations(v).len > 0 and v != std) {
+            std.testing.refAllDecls(v);
         }
     }
-
-    const output = blk: {
-        var arr = std.ArrayList(u8).init(tst.allocator);
-        errdefer arr.deinit();
-        try koino.html.print(arr.writer(), tst.allocator, .{}, doc);
-        break :blk try arr.toOwnedSlice();
-    };
-    defer tst.allocator.free(output);
-    defer doc.deinit();
-
-    // std.debug.print("{s}\n", .{output});
 }

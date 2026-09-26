@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Test one file standalone with src/ as module root: tools/zt src/dsp/fft.zig [extra zig test args]
+set -euo pipefail
+f="${1#src/}"; shift
+root="$(cd "$(dirname "$0")/.." && pwd)/src"
+t="$root/.t_$(echo "$f" | tr '/.' '__').zig"
+trap 'rm -f "$t"' EXIT
+printf 'test {\n    _ = @import("%s");\n}\n' "$f" > "$t"
+zig test "$t" "$@"
