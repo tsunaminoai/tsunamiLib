@@ -38,7 +38,7 @@ pub const BrailleSet = enum(u8) {
 
 const tst = std.testing;
 
-test "braille mix combines dots" {
+test BrailleSet {
     const combined = BrailleSet.top_left.mix(BrailleSet.bottom_right);
     try tst.expectEqual(@intFromEnum(BrailleSet.top_left) | @intFromEnum(BrailleSet.bottom_right), @intFromEnum(combined));
 }

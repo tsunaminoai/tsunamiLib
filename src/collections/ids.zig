@@ -19,9 +19,8 @@ pub fn Id(comptime tag: []const u8) type {
             return self.value;
         }
 
-        pub fn format(self: Self, comptime fmt: []const u8, _: std.fmt.FormatOptions, w: *std.Io.Writer) std.Io.Writer.Error!void {
-            _ = fmt;
-            try w.print("{s}({})", .{ tag, self.value });
+        pub fn format(self: Self, w: *std.Io.Writer) std.Io.Writer.Error!void {
+            try w.print("{s}({d})", .{ tag, self.value });
         }
     };
 }
@@ -94,7 +93,7 @@ test "Id types are distinct by tag" {
     try tst.expectEqual(@TypeOf(user1) == @TypeOf(role1), false);
 }
 
-test "IdSlab insert and get" {
+test IdSlab {
     var slab: IdSlab(u32, "test") = .empty;
     defer slab.deinit(tst.allocator);
 
@@ -157,4 +156,10 @@ test "IdSlab clone copies data" {
     try cloned.set(id1, 999);
     try tst.expectEqual(@as(u32, 100), original.get(id1).?);
     try tst.expectEqual(@as(u32, 999), cloned.get(id1).?);
+}
+
+test "Id formats as tag(value)" {
+    var buf: [32]u8 = undefined;
+    const s = try std.fmt.bufPrint(&buf, "{f}", .{Id("item").from(7)});
+    try std.testing.expectEqualStrings("item(7)", s);
 }

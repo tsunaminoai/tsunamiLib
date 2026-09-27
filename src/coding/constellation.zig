@@ -121,7 +121,7 @@ test "gray/ungray inverse" {
     }
 }
 
-test "qam map/slice round trip and unit energy" {
+test Qam {
     inline for (.{ 2, 4, 6, 8 }) |b| {
         const Q = Qam(f32, b);
         var e: f64 = 0;

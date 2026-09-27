@@ -132,7 +132,7 @@ pub const Interner = struct {
 
 const testing = std.testing;
 
-test "interning the same string twice returns the same Handle and stores it once" {
+test Interner {
     var itn: Interner = .empty;
     defer itn.deinit(testing.allocator);
 

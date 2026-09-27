@@ -240,7 +240,7 @@ test "same-rate conversion is an exact copy" {
     try testing.expectEqualSlices(f32, &in, out);
 }
 
-test "44100->48000: 1 kHz sine matches the ideal 48 kHz sine to <= -70 dB" {
+test convertAlloc {
     const in = try tone(testing.allocator, 44100, 1000.0, 11025);
     defer testing.allocator.free(in);
     const out = try convertAlloc(testing.allocator, in, 44100, 48000);

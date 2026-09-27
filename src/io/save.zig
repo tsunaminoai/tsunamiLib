@@ -112,7 +112,7 @@ pub fn load(gpa: std.mem.Allocator, io: std.Io, dir: std.Io.Dir, name: []const u
 
 const testing = std.testing;
 
-test "save then load round-trips the same bytes" {
+test save {
     var tmp = testing.tmpDir(.{});
     defer tmp.cleanup();
 

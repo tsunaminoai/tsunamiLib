@@ -225,7 +225,7 @@ const Accum = struct {
 
 const G = Graph(f32, .{ Const, Add, Accum });
 
-test "evaluate in topological order regardless of insertion order" {
+test Graph {
     var g: G = .empty;
     defer g.deinit(testing.allocator);
     const acc = try g.add(testing.allocator, Accum{});

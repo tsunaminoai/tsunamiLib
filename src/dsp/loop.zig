@@ -104,7 +104,7 @@ test "LoopFilter: zero error gives zero correction after reset" {
     try testing.expectEqual(@as(f32, 0.0), lf.advance(0.0));
 }
 
-test "Pll: tracks a constant phase offset via a simple phase-difference detector" {
+test Pll {
     // Detector: error = desired_phase - nco_phase (small-angle, wrapped).
     var pll = Pll(f32).init(0.05, 0.707, 1.0, 0.0);
     const target: f32 = 0.3; // radians, held constant each step

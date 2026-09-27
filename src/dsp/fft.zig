@@ -118,7 +118,7 @@ test "round trip and Parseval" {
     for (x, orig) |g, w| try testing.expectApproxEqAbs(w.re, g.re, 1e-4);
 }
 
-test "real tone lands in its bin" {
+test Fft {
     const F = Fft(f32, 256);
     var in: [256]f32 = undefined;
     for (&in, 0..) |*v, i| v.* = @cos(2.0 * std.math.pi * 10.0 * @as(f32, @floatFromInt(i)) / 256.0);

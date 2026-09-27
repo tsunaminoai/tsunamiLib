@@ -169,7 +169,7 @@ test "size accounts for header, payload and crc trailer" {
     try testing.expectEqual(@as(usize, 4 + 2 + 13 + 4), SampleBlob.size);
 }
 
-test "encode/decode round-trips a struct with enum, array, nested struct and bool" {
+test Blob {
     const value: Sample = .{
         .id = 0xDEADBEEF,
         .active = true,

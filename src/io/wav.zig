@@ -426,7 +426,7 @@ test "readSamples requires nonzero out when samples pending" {
     try testing.expectEqual(@as(usize, 0), n);
 }
 
-test "round trip: mono 16-bit PCM" {
+test Header {
     var buf: [256]u8 = undefined;
     var w: std.Io.Writer = .fixed(&buf);
 

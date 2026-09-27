@@ -18,6 +18,7 @@ pub fn besselI0(x: f64) f64 {
 
 /// Hann window, n taps.
 pub fn hann(comptime T: type, comptime n: usize) [n]T {
+    @setEvalBranchQuota(n * 64 + 1000);
     var w: [n]T = undefined;
     for (&w, 0..) |*v, i| {
         const t: f64 = @as(f64, @floatFromInt(i)) / @as(f64, @floatFromInt(n - 1));
@@ -28,6 +29,7 @@ pub fn hann(comptime T: type, comptime n: usize) [n]T {
 
 /// Hamming window, n taps.
 pub fn hamming(comptime T: type, comptime n: usize) [n]T {
+    @setEvalBranchQuota(n * 64 + 1000);
     var w: [n]T = undefined;
     for (&w, 0..) |*v, i| {
         const t: f64 = @as(f64, @floatFromInt(i)) / @as(f64, @floatFromInt(n - 1));
@@ -38,6 +40,7 @@ pub fn hamming(comptime T: type, comptime n: usize) [n]T {
 
 /// Blackman window, n taps.
 pub fn blackman(comptime T: type, comptime n: usize) [n]T {
+    @setEvalBranchQuota(n * 64 + 1000);
     var w: [n]T = undefined;
     for (&w, 0..) |*v, i| {
         const t: f64 = @as(f64, @floatFromInt(i)) / @as(f64, @floatFromInt(n - 1));
@@ -49,6 +52,7 @@ pub fn blackman(comptime T: type, comptime n: usize) [n]T {
 /// Kaiser window, n taps, shape parameter beta (higher beta = more
 /// sidelobe suppression, wider main lobe). beta ≈ 8 gives ≈ −81 dB sidelobes.
 pub fn kaiser(comptime T: type, comptime n: usize, comptime beta: f64) [n]T {
+    @setEvalBranchQuota(n * 64 + 1000);
     var w: [n]T = undefined;
     const norm = besselI0(beta);
     const centre: f64 = @as(f64, @floatFromInt(n - 1)) / 2.0;
@@ -76,7 +80,7 @@ test "besselI0 matches known values" {
     try testing.expectApproxEqAbs(@as(f64, 427.56411572180474), besselI0(8.0), 1e-6);
 }
 
-test "hann window: zero endpoints, unity centre" {
+test hann {
     const w = hann(f64, 9);
     try testing.expectApproxEqAbs(@as(f64, 0.0), w[0], 1e-12);
     try testing.expectApproxEqAbs(@as(f64, 0.0), w[8], 1e-12);

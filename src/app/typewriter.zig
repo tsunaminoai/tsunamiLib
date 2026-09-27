@@ -68,7 +68,7 @@ fn byteOffsetForCodepoints(text: []const u8, n: usize) usize {
 
 const testing = std.testing;
 
-test "reveals incrementally and completes" {
+test Typewriter {
     var tw: Typewriter = .{ .chars_per_second = 10 };
     const text = "hello world";
     tw.update(text, 0.5); // 5 chars

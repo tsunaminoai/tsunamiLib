@@ -9,7 +9,26 @@ mod.addImport("tsunami", ts.module("tsunami"));
 // raylib helpers: b.dependency("tsunamiLib", .{ ..., .rl = true }).module("tsunami_rl")
 ```
 
-`zig build test` · `zig build ci` (fmt check + Debug/ReleaseSafe/ReleaseFast) · `tools/zt src/<file>.zig` (runs one file's tests)
+`zig build test` · `zig build ci` (fmt check, tests in Debug/ReleaseSafe/ReleaseFast, all examples) · `tools/zt src/<file>.zig` (runs one file's tests)
+
+**Docs:** `zig build docs-serve`, then open http://127.0.0.1:8080/. `zig build docs` only writes `zig-out/docs`, which has to be served over HTTP. Each major declaration's page includes a doctest example.
+
+**Examples** (`zig build run-<name>`, `zig build examples` runs them all). Each one checks its own result and exits non-zero on failure.
+
+| Example | Shows |
+|---|---|
+| `spectrum` | comptime FIR taps, SIMD `Fir`, biquad, windowed `Fft` |
+| `modem` | 64-QAM → AWGN → LLRs → LDPC(1944, r5/6) decode |
+| `erasure` | Reed-Solomon reconstruct after losing 2 of 6 segments; interleaver burst spreading |
+| `geometry` | vec/Mat4 projection, ray–AABB, bezier distance, great-circle, grid, GMST |
+| `wav` | WAV round trip through `std.Io`; save blob with corruption rejected |
+| `cli` | struct-driven `args.parse`, comptime usage, diagnostics |
+| `calculator` | comptime-spec lexer feeding the Pratt parser |
+| `cpu` | comptime opcode `Isa` over a memory-mapped `Bus` (sums 1..10) |
+| `dataflow` | node `Graph` evaluated in topological order, cycle rejection |
+| `animation` | tweens, typewriter, countdown, scene stack, stopwatch |
+| `collections` | seeded shuffle, event log, interner, typed ids |
+| `terminal` | comptime ANSI, braille sparkline, terminal size |
 
 Conventions:
 - Sizes, tables and dispatch are comptime.

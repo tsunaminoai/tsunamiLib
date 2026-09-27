@@ -141,7 +141,7 @@ pub fn Tween(comptime T: type, comptime easeFn: fn (f32) f32) type {
 
 const testing = std.testing;
 
-test "linear tween reaches start, mid, and end" {
+test Tween {
     var tw = Tween(f32, ease.linear).init(0, 10, 2.0);
     try testing.expect(!tw.done());
     try testing.expectApproxEqAbs(@as(f32, 0.0), tw.value(), 1e-6);

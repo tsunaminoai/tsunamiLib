@@ -173,7 +173,7 @@ test "Pos add/sub/scale/manhattan/rotate90" {
     try testing.expectEqual(P.init(-3, 2), P.init(2, 3).rotate90());
 }
 
-test "Grid initBuffer get/set/inBounds" {
+test Grid {
     var buf: [12]u8 = undefined;
     var g = Grid(u8).initBuffer(&buf, 4, 3);
     try testing.expect(g.inBounds(0, 0));

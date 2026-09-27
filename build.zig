@@ -24,10 +24,48 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run unit tests");
     addSuite(b, test_step, target, optimize, test_filters, rl);
 
+    // ── Examples ─────────────────────────────────────────────────────────
+    // `examples` builds and runs every one, so they can't rot; `run-<name>` runs one.
+    const examples_step = b.step("examples", "Build and run every example");
+    for (examples) |name| {
+        const m = b.createModule(.{
+            .root_source_file = b.path(b.fmt("examples/{s}.zig", .{name})),
+            .target = target,
+            .optimize = optimize,
+        });
+        m.addImport("tsunami", core);
+        const exe = b.addExecutable(.{ .name = name, .root_module = m });
+        const run = b.addRunArtifact(exe);
+        if (b.args) |a| run.addArgs(a);
+        b.step(b.fmt("run-{s}", .{name}), b.fmt("Run examples/{s}.zig", .{name})).dependOn(&run.step);
+        examples_step.dependOn(&run.step);
+    }
+
+    // ── Docs ─────────────────────────────────────────────────────────────
+    const docs_obj = b.addObject(.{ .name = "tsunami", .root_module = core });
+    const docs = b.addInstallDirectory(.{
+        .source_dir = docs_obj.getEmittedDocs(),
+        .install_dir = .prefix,
+        .install_subdir = "docs",
+    });
+    b.step("docs", "Emit autodoc HTML to zig-out/docs").dependOn(&docs.step);
+
+    const serve_exe = b.addExecutable(.{ .name = "docs_serve", .root_module = b.createModule(.{
+        .root_source_file = b.path("tools/docs_serve.zig"),
+        .target = target,
+        .optimize = optimize,
+    }) });
+    const serve = b.addRunArtifact(serve_exe);
+    serve.addArg(b.getInstallPath(.prefix, "docs"));
+    if (b.args) |a| serve.addArgs(a);
+    serve.step.dependOn(&docs.step);
+    b.step("docs-serve", "Build docs and serve on 127.0.0.1:8080 (port override: -- <port>)").dependOn(&serve.step);
+
     // ── CI gate ──────────────────────────────────────────────────────────
     const ci_step = b.step("ci", "Format check + tests in Debug/ReleaseSafe/ReleaseFast");
-    const fmt = b.addFmt(.{ .paths = &.{ "src", "build.zig", "build.zig.zon" }, .check = true });
+    const fmt = b.addFmt(.{ .paths = &.{ "src", "examples", "tools", "build.zig", "build.zig.zon" }, .check = true });
     ci_step.dependOn(&fmt.step);
+    ci_step.dependOn(examples_step);
     for ([_]std.builtin.OptimizeMode{ .Debug, .ReleaseSafe, .ReleaseFast }) |mode| {
         addSuite(b, ci_step, target, mode, test_filters, rl);
     }
@@ -74,3 +112,18 @@ fn addSuite(
     const rt = b.addTest(.{ .name = "tsunami_rl", .root_module = m, .filters = filters });
     step.dependOn(&b.addRunArtifact(rt).step);
 }
+
+const examples = [_][]const u8{
+    "spectrum",
+    "modem",
+    "erasure",
+    "geometry",
+    "cli",
+    "calculator",
+    "wav",
+    "cpu",
+    "dataflow",
+    "animation",
+    "collections",
+    "terminal",
+};

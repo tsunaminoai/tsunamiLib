@@ -130,7 +130,7 @@ fn num(v: f64) Tok {
     return .{ .tag = .num, .v = v };
 }
 
-test "precedence and associativity" {
+test Parser {
     // 1 + 2 * 3 ^ 2 = 19
     try testing.expectEqual(@as(f64, 19), try run(&.{ num(1), .{ .tag = .plus }, num(2), .{ .tag = .star }, num(3), .{ .tag = .caret }, num(2) }));
     // 2 ^ 3 ^ 2 = 512 (right-assoc)

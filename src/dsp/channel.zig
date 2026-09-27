@@ -136,7 +136,7 @@ pub const example = struct {
 
 const testing = std.testing;
 
-test "awgn: measured noise power matches the target SNR" {
+test awgn {
     var prng = std.Random.DefaultPrng.init(1);
     var rand = prng.random();
     var sine: [8000]f32 = undefined;

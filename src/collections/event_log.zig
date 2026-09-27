@@ -48,7 +48,7 @@ const TestEvent = union(enum) {
     turn_passed: u8,
 };
 
-test "append then drain returns events in order" {
+test EventLog {
     var log: EventLog(TestEvent) = .empty;
     defer log.deinit(tst.allocator);
 

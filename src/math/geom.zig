@@ -114,7 +114,7 @@ pub fn rectIntersect(comptime V: type, a: Rect(V), b: Rect(V)) bool {
 
 const testing = std.testing;
 
-test "rayAabb: hit, miss, origin inside, box behind" {
+test rayAabb {
     const V = @Vector(3, f32);
     const bmin: V = .{ 1, -1, -1 };
     const bmax: V = .{ 3, 1, 1 };

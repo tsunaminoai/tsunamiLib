@@ -11,6 +11,7 @@ pub fn lowpass(
     comptime fc: f64,
     comptime win: enum { hann, hamming, blackman },
 ) [taps]T {
+    @setEvalBranchQuota(taps * 64 + 1000);
     var h: [taps]T = undefined;
     const w = switch (win) {
         .hann => window.hann(f64, taps),
@@ -121,7 +122,7 @@ test "lowpass: symmetric taps (linear phase)" {
     for (0..15) |i| try testing.expectApproxEqAbs(h[i], h[30 - i], 1e-12);
 }
 
-test "lowpass: attenuates a tone above cutoff, passes one below" {
+test lowpass {
     const N = 63;
     const h = lowpass(f32, N, 0.1, .hamming);
     var fir = Fir(f32, N).init(h);

@@ -30,7 +30,7 @@ pub fn get(fd: std.posix.fd_t) ?Size {
 
 // ── Tests ────────────────────────────────────────────────────────────────
 
-test "non-tty fd returns null" {
+test get {
     // Test with stdin; if running in non-interactive context, may return null
     const result = get(std.posix.STDIN_FILENO);
     // Result depends on test environment; we just verify the function doesn't crash

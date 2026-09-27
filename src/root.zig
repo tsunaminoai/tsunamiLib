@@ -1,3 +1,11 @@
+//! tsunamiLib: std-only building blocks for Zig 0.16.0.
+//!
+//! Sizes, tables and dispatch are comptime; callers pass scratch buffers;
+//! allocating APIs take the allocator first; only `io` and `app` touch
+//! `std.Io`. Each major declaration's page shows a runnable doctest.
+//! Full programs live in `examples/` (`zig build run-<name>`).
+//! Raylib helpers are a separate module, `tsunami_rl` (`-Drl=true`).
+
 const std = @import("std");
 
 pub const contract = @import("contract.zig");

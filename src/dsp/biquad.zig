@@ -183,7 +183,7 @@ fn magnitudeAt(comptime T: type, filt: anytype, fc_hz: T, fs: T, n: usize) T {
     return peak_out;
 }
 
-test "lowpass: passes DC-ish low tone, attenuates high tone" {
+test Biquad {
     var lp = Biquad(f64).lowpass(1000.0, 48000.0, std.math.sqrt1_2);
     const lo = magnitudeAt(f64, lp, 100.0, 48000.0, 4000);
     lp.reset();

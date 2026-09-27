@@ -163,7 +163,7 @@ fn Recorder(comptime max_depth: usize) type {
     };
 }
 
-test "push enters the scene and update/render dispatch to it" {
+test SceneStack {
     const Stack = TestStack(4);
     const R = Recorder(4);
     var ctx: TestCtx = .{};

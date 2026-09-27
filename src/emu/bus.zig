@@ -117,7 +117,7 @@ const TestMirror = struct {
     }
 };
 
-test "Bus read and write to RAM device" {
+test Bus {
     var ram: TestRam = .{};
     var bus: Bus(2) = Bus(2).init();
 

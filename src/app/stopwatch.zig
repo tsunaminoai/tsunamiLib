@@ -72,7 +72,7 @@ pub fn Countdown(comptime T: type) type {
 
 const testing = std.testing;
 
-test "stopwatch measures, laps, pauses" {
+test Stopwatch {
     const io = testing.io;
     var sw: Stopwatch = .start(io);
     try io.sleep(.fromMilliseconds(2), .awake);

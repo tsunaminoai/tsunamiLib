@@ -108,7 +108,7 @@ const Toy = struct {
     });
 };
 
-test "run executes program until halt" {
+test Isa {
     var cpu: Toy = .{};
     cpu.mem[0x80] = 10;
     @memcpy(cpu.mem[0..7], &[_]u8{ 0x01, 0x02, 5, 0x03, 0x80, 0x01, 0xFF });

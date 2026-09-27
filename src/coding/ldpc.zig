@@ -218,7 +218,7 @@ test "golden encode vectors" {
     try goldenCheck(Ldpc648R12, golden.GOLDEN_648_R12_INFO, golden.GOLDEN_648_R12_CW);
 }
 
-test "decode: clean, sign flips, erasure burst (r5/6)" {
+test Code {
     const C = Ldpc1944R56;
     const cw = golden.GOLDEN_1944_R56_CW[2];
     var llr: [C.n]f32 = undefined;

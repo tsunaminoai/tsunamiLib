@@ -134,7 +134,7 @@ pub fn beamInverse(ke_radius_km: f32, ground_km: f32, height_km: f32) BeamRay {
 
 const testing = std.testing;
 
-test "distanceKm: zero for identical points, sane for a known pair" {
+test distanceKm {
     try testing.expectApproxEqAbs(@as(f32, 0), distanceKm(f32, 39.7, -86.28, 39.7, -86.28), 1e-4);
     // Indianapolis to Chicago, roughly 260 km.
     const d = distanceKm(f32, 39.708, -86.28, 41.604, -88.085);

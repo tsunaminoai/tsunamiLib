@@ -199,7 +199,7 @@ const TOpts = struct {
     pub const help = .{ .matches = "games to play" };
 };
 
-test "parses flags, defaults, rest" {
+test parse {
     const argv = [_][]const u8{ "--matches", "0x10", "-f", "--out-dir=/tmp", "--mode", "b", "file1", "--fast" };
     const r = try parse(TOpts, &argv, null);
     try testing.expectEqual(@as(u32, 16), r.opts.matches);

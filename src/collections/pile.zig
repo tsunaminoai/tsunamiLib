@@ -171,7 +171,7 @@ test "get and remove are bounds-safe" {
     try tst.expectEqual(@as(u8, 2), p.get(0).?.rank);
 }
 
-test "peek and draw" {
+test Pile {
     var p: Pile(TestCard) = .empty;
     defer p.deinit(tst.allocator);
 

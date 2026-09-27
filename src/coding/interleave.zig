@@ -25,7 +25,7 @@ pub fn deinterleave(comptime T: type, depth: usize, width: usize, in: []const T,
 
 // ── Tests ────────────────────────────────────────────────────────────────
 
-test "round-trip identity for u1 and f32" {
+test interleave {
     const alloc = std.testing.allocator;
     var prng = std.Random.DefaultPrng.init(21);
     const rand = prng.random();

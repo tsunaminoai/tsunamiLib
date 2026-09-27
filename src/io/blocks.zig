@@ -91,7 +91,7 @@ test "read/writeInto round trip, native endian" {
     try testing.expectEqual(rec, got);
 }
 
-test "read/writeInto round trip, foreign endian swaps every integer field" {
+test read {
     const rec = sampleRec();
     const foreign: std.builtin.Endian = comptime if (@import("builtin").cpu.arch.endian() == .little) .big else .little;
 

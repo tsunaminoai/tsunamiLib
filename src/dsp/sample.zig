@@ -107,7 +107,7 @@ fn testDownwardsConversions(
 
 // ── Tests ────────────────────────────────────────────────────────────────
 
-test "sanity test" {
+test convert {
     try testDownwardsConversions(0.0, 0x80, 0, 0, 0);
     try testDownwardsConversions(0.0122069996, 0x81, 0x18F, 0x18FFF, 0x18FFFBB);
     try testDownwardsConversions(0.00274699973, 0x80, 0x5A, 0x5A03, 0x5A0381);

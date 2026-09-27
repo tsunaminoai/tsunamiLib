@@ -112,7 +112,7 @@ test "SincInterp: integer positions reproduce the input away from edges" {
     }
 }
 
-test "SincInterp: fractional positions track a sine at high frequency" {
+test SincInterp {
     const S = SincInterp(f32, 16, 64);
     var input: [512]f32 = undefined;
     for (&input, 0..) |*s, n| s.* = @sin(2.0 * std.math.pi * 0.25 * @as(f32, @floatFromInt(n)));

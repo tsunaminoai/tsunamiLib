@@ -216,7 +216,7 @@ test "swizzle and extend" {
     try testing.expectEqual(Vec4{ 1, 2, 3, 9 }, extend(Vec3{ 1, 2, 3 }, 9));
 }
 
-test "matrix identity, mul, transpose" {
+test Mat {
     const t = translate(.{ 1, 2, 3 });
     const p = t.mulVec(.{ 1, 1, 1, 1 });
     try testing.expect(approxEq(p, .{ 2, 3, 4, 1 }, 1e-6));

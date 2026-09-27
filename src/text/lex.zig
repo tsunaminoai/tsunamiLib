@@ -258,7 +258,7 @@ fn collect(src: []const u8, out: []TestLexer.T) []TestLexer.T {
     return out[0..i];
 }
 
-test "init and next: representative source" {
+test Lexer {
     const src =
         \\let x = 1.5e2; // trailing comment
         \\if x <= 3 {

@@ -134,7 +134,7 @@ pub fn dcs2c(comptime T: type, sphere: Spherical(T)) Cartesian(T) {
 
 // ── Tests ────────────────────────────────────────────────────────────────
 
-test "gmst at J2000" {
+test gmst {
     // MJD 51544.5 (J2000 epoch) should give gmst in radians
     const result = try gmst(51544.5);
     try tst.expect(result > 4.0 and result < 6.0);

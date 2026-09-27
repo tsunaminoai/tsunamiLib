@@ -31,7 +31,7 @@ pub const Rng = struct {
 
 const tst = std.testing;
 
-test "same seed reproduces the same stream" {
+test Rng {
     var a = Rng.init(0xDEAD_BEEF);
     var b = Rng.init(0xDEAD_BEEF);
     for (0..64) |_| {

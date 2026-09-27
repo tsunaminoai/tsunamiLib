@@ -247,7 +247,7 @@ test "field axioms" {
     }
 }
 
-test "systematic encode/decode round-trip, all single+double erasures" {
+test Coder {
     const alloc = testing.allocator;
     const k = 4;
     const m = 2;
