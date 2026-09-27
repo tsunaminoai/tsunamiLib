@@ -1,4 +1,6 @@
 zig-out
 zig-cache
+zig-pkg
 .direnv
 .zig-cache
+src/.t_*.zig

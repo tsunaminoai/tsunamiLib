@@ -1,109 +1,129 @@
 const std = @import("std");
 
-// Although this function looks imperative, note that its job is to
-// declaratively construct a build graph that will be executed by an external
-// runner.
+/// `tsunami` is std-only. `tsunami_rl` exists only with `-Drl=true`, so the
+/// lazy raylib dependency is never fetched by consumers that don't ask for it.
 pub fn build(b: *std.Build) void {
-    // Standard target options allows the person running `zig build` to choose
-    // what target to build for. Here we do not override the defaults, which
-    // means any target is allowed, and the default is native. Other options
-    // for restricting supported target set are available.
     const target = b.standardTargetOptions(.{});
-
-    // Standard optimization options allow the person running `zig build` to select
-    // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall. Here we do not
-    // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
+    const rl = b.option(bool, "rl", "Expose the tsunami_rl raylib module") orelse false;
+    const test_filters = b.option(
+        []const []const u8,
+        "test-filter",
+        "Skip tests that do not match any of the specified filters",
+    ) orelse &.{};
 
-    _ = b.addModule("termsize", .{
-        .root_source_file = b.path("src/termsize.zig"),
-    });
-    const koino_dep = b.dependency("koino", .{
-        .target = target,
-        .optimize = optimize,
-    });
-
-    const lib = b.addStaticLibrary(.{
-        .name = "tsunamiLib",
-        // In this case the main source file is merely a path, however, in more
-        // complicated build scripts, this could be a generated file.
+    // ── Modules ──────────────────────────────────────────────────────────
+    const core = b.addModule("tsunami", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,
     });
-    lib.root_module.addImport("koino", koino_dep.module("koino"));
+    if (rl) _ = rlModule(b, core, target, optimize, true);
 
-    // This declares intent for the library to be installed into the standard
-    // location when the user invokes the "install" step (the default step when
-    // running `zig build`).
-    b.installArtifact(lib);
+    // ── Tests ────────────────────────────────────────────────────────────
+    const test_step = b.step("test", "Run unit tests");
+    addSuite(b, test_step, target, optimize, test_filters, rl);
 
-    const exe = b.addExecutable(.{
-        .name = "tsunamiLib",
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-
-    // This declares intent for the executable to be installed into the
-    // standard location when the user invokes the "install" step (the default
-    // step when running `zig build`).
-    b.installArtifact(exe);
-
-    // This *creates* a Run step in the build graph, to be executed when another
-    // step is evaluated that depends on it. The next line below will establish
-    // such a dependency.
-    const run_cmd = b.addRunArtifact(exe);
-
-    // By making the run step depend on the install step, it will be run from the
-    // installation directory rather than directly from within the cache directory.
-    // This is not necessary, however, if the application depends on other installed
-    // files, this ensures they will be present and in the expected location.
-    run_cmd.step.dependOn(b.getInstallStep());
-
-    // This allows the user to pass arguments to the application in the build
-    // command itself, like this: `zig build run -- arg1 arg2 etc`
-    if (b.args) |args| {
-        run_cmd.addArgs(args);
+    // ── Examples ─────────────────────────────────────────────────────────
+    // `examples` builds and runs every one, so they can't rot; `run-<name>` runs one.
+    const examples_step = b.step("examples", "Build and run every example");
+    for (examples) |name| {
+        const m = b.createModule(.{
+            .root_source_file = b.path(b.fmt("examples/{s}.zig", .{name})),
+            .target = target,
+            .optimize = optimize,
+        });
+        m.addImport("tsunami", core);
+        const exe = b.addExecutable(.{ .name = name, .root_module = m });
+        const run = b.addRunArtifact(exe);
+        if (b.args) |a| run.addArgs(a);
+        b.step(b.fmt("run-{s}", .{name}), b.fmt("Run examples/{s}.zig", .{name})).dependOn(&run.step);
+        examples_step.dependOn(&run.step);
     }
 
-    // This creates a build step. It will be visible in the `zig build --help` menu,
-    // and can be selected like this: `zig build run`
-    // This will evaluate the `run` step rather than the default, which is "install".
-    const run_step = b.step("run", "Run the app");
-    run_step.dependOn(&run_cmd.step);
+    // ── Docs ─────────────────────────────────────────────────────────────
+    const docs_obj = b.addObject(.{ .name = "tsunami", .root_module = core });
+    const docs = b.addInstallDirectory(.{
+        .source_dir = docs_obj.getEmittedDocs(),
+        .install_dir = .prefix,
+        .install_subdir = "docs",
+    });
+    b.step("docs", "Emit autodoc HTML to zig-out/docs").dependOn(&docs.step);
 
-    // Creates a step for unit testing. This only builds the test executable
-    // but does not run it.
-    const termsize_unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/termsize.zig"),
+    const serve_exe = b.addExecutable(.{ .name = "docs_serve", .root_module = b.createModule(.{
+        .root_source_file = b.path("tools/docs_serve.zig"),
         .target = target,
         .optimize = optimize,
-        .test_runner = null,
-        //todo: .test_runner = "zig test", or something
-    });
+    }) });
+    const serve = b.addRunArtifact(serve_exe);
+    serve.addArg(b.getInstallPath(.prefix, "docs"));
+    if (b.args) |a| serve.addArgs(a);
+    serve.step.dependOn(&docs.step);
+    b.step("docs-serve", "Build docs and serve on 127.0.0.1:8080 (port override: -- <port>)").dependOn(&serve.step);
 
-    const run_termsize_unit_tests = b.addRunArtifact(termsize_unit_tests);
-    _ = run_termsize_unit_tests; // autofix
-
-    const exe_unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-
-    const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
-
-    const lib_unit_tests = b.addTest(.{
-        .root_module = lib.root_module,
-    });
-    const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
-
-    // Similar to creating the run step earlier, this exposes a `test` step to
-    // the `zig build --help` menu, providing a way for the user to request
-    // running the unit tests.
-    const test_step = b.step("test", "Run unit tests");
-    // test_step.dependOn(&run_termsize_unit_tests.step);
-    test_step.dependOn(&run_exe_unit_tests.step);
-    test_step.dependOn(&run_lib_unit_tests.step);
+    // ── CI gate ──────────────────────────────────────────────────────────
+    const ci_step = b.step("ci", "Format check + tests in Debug/ReleaseSafe/ReleaseFast");
+    const fmt = b.addFmt(.{ .paths = &.{ "src", "examples", "tools", "build.zig", "build.zig.zon" }, .check = true });
+    ci_step.dependOn(&fmt.step);
+    ci_step.dependOn(examples_step);
+    for ([_]std.builtin.OptimizeMode{ .Debug, .ReleaseSafe, .ReleaseFast }) |mode| {
+        addSuite(b, ci_step, target, mode, test_filters, rl);
+    }
 }
+
+fn rlModule(
+    b: *std.Build,
+    core: *std.Build.Module,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    exported: bool,
+) ?*std.Build.Module {
+    const dep = b.lazyDependency("raylib_zig", .{ .target = target, .optimize = optimize }) orelse return null;
+    const opts: std.Build.Module.CreateOptions = .{
+        .root_source_file = b.path("src/rl/root.zig"),
+        .target = target,
+        .optimize = optimize,
+    };
+    const m = if (exported) b.addModule("tsunami_rl", opts) else b.createModule(opts);
+    m.addImport("tsunami", core);
+    m.addImport("raylib", dep.module("raylib"));
+    m.linkLibrary(dep.artifact("raylib"));
+    return m;
+}
+
+fn addSuite(
+    b: *std.Build,
+    step: *std.Build.Step,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    filters: []const []const u8,
+    rl: bool,
+) void {
+    const core = b.createModule(.{
+        .root_source_file = b.path("src/root.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const t = b.addTest(.{ .name = "tsunami", .root_module = core, .filters = filters });
+    step.dependOn(&b.addRunArtifact(t).step);
+
+    if (!rl) return;
+    const m = rlModule(b, core, target, optimize, false) orelse return;
+    const rt = b.addTest(.{ .name = "tsunami_rl", .root_module = m, .filters = filters });
+    step.dependOn(&b.addRunArtifact(rt).step);
+}
+
+const examples = [_][]const u8{
+    "spectrum",
+    "modem",
+    "erasure",
+    "geometry",
+    "cli",
+    "calculator",
+    "wav",
+    "cpu",
+    "dataflow",
+    "animation",
+    "collections",
+    "terminal",
+};
